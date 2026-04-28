@@ -1,0 +1,8 @@
+replica/bin/
+replica/obj/
+replica/publish/
+ghidra_project/
+
+*.user
+*.suo
+*.tmp

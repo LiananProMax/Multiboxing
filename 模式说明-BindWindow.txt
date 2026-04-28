@@ -1,0 +1,56 @@
+免注册调用dm插件
+public 为空则使用 BindWindow 不为空则使用 BindWindowEx
+
+mouse 字符串: 鼠标仿真模式 取值有以下几种
+
+"windows": Windows模式,采取模拟windows消息方式 同按键自带后台插件.
+
+"windows2": Windows2 模式,采取模拟windows消息方式(锁定鼠标位置) 此模式等同于BindWindowEx中的mouse为以下组合
+"dx.mouse.position.lock.api|dx.mouse.position.lock.message|dx.mouse.state.message"
+注意此模式需要管理员权限
+
+"windows3": Windows3模式，采取模拟windows消息方式,可以支持有多个子窗口的窗口后台.
+
+"dx": dx模式,采用模拟dx后台鼠标模式,这种方式会锁定鼠标输入.有些窗口在此模式下绑定时，需要先激活窗口再绑定(或者绑定以后激活)，否则可能会出现绑定后鼠标无效的情况.此模式等同于BindWindowEx中的mouse为以下组合
+"dx.public.active.api|dx.public.active.message|dx.mouse.position.lock.api|dx.mouse.position.lock.message|dx.mouse.state.api|dx.mouse.state.message|dx.mouse.api|dx.mouse.focus.input.api|dx.mouse.focus.input.message|dx.mouse.clip.lock.api|dx.mouse.input.lock.api|dx.mouse.cursor"
+注意此模式需要管理员权限
+
+"dx2"：dx2模式,这种方式类似于dx模式,但是不会锁定外部鼠标输入.
+有些窗口在此模式下绑定时，需要先激活窗口再绑定(或者绑定以后手动激活)，否则可能会出现绑定后鼠标无效的情况. 此模式等同于BindWindowEx中的mouse为以下组合
+"dx.public.active.api|dx.public.active.message|dx.mouse.position.lock.api|dx.mouse.state.api|dx.mouse.api|dx.mouse.focus.input.api|dx.mouse.focus.input.message|dx.mouse.clip.lock.api|dx.mouse.input.lock.api| dx.mouse.cursor"
+注意此模式需要管理员权限
+
+keypad 字符串: 键盘仿真模式 取值有以下几种
+
+"windows": Windows模式,采取模拟windows消息方式 同按键的后台插件.
+
+"dx": dx模式,采用模拟dx后台键盘模式。有些窗口在此模式下绑定时，需要先激活窗口再绑定(或者绑定以后激活)，否则可能会出现绑定后键盘无效的情况. 此模式等同于BindWindowEx中的keypad为以下组合
+"dx.public.active.api|dx.public.active.message| dx.keypad.state.api|dx.keypad.api|dx.keypad.input.lock.api"
+注意此模式需要管理员权限
+
+ 
+
+mode 整形数: 模式。 取值有以下几种
+
+     0 : 推荐模式此模式比较通用，而且后台效果是最好的.
+
+     1 : 和模式0效果一样，如果模式0会失败时，可以尝试此模式. 
+
+     2 : 同模式0,此模式为老的模式0,尽量不要用此模式，除非有兼容性问题.
+
+     3 : 同模式1,此模式为老的模式1,尽量不要用此模式，除非有兼容性问题. 
+
+     4 : 同模式0,如果模式0有崩溃问题，可以尝试此模式.
+
+     5 : 同模式1, 如果模式0有崩溃问题，可以尝试此模式. 
+
+     6 : 同模式0，如果模式0有崩溃问题，可以尝试此模式. 
+
+     7 : 同模式1，如果模式1有崩溃问题，可以尝试此模式. 
+
+     101 : 超级绑定模式. 可隐藏目标进程中的dm.dll.避免被恶意检测.效果要比dx.public.hide.dll好. 推荐使用.
+
+     103 : 同模式101，如果模式101有崩溃问题，可以尝试此模式. 
+
+需要注意的是: 模式1 3 5 7 101 103在大部分窗口下绑定都没问题。但也有少数特殊的窗口，比如有很多子窗口的窗口，对于这种窗口，在绑定时，一定要把
+鼠标指向一个可以输入文字的窗口，比如一个文本框，最好能激活这个文本框，这样可以保证绑定的成功.
