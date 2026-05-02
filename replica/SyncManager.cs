@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 
 namespace KeyMouseSyncReplica;
@@ -39,6 +40,7 @@ public sealed class SyncManager : IDisposable
                 {
                     window.BindState = "dm创建失败";
                     window.SyncState = "消息同步";
+                    window.CurrentMode = "Windows 消息同步兜底";
                     continue;
                 }
                 var initInfo = plugin.Initialize(Path.GetDirectoryName(dmDllPath) ?? AppContext.BaseDirectory);
@@ -74,6 +76,7 @@ public sealed class SyncManager : IDisposable
                     plugin.Dispose();
                     window.BindState = "dm绑定失败";
                     window.SyncState = "消息同步";
+                    window.CurrentMode = "Windows 消息同步兜底";
                     window.LastError = $"dm 返回 {bindResult}; {diagnostic}; {Path.GetFileName(dmDllPath)}"
                         + (string.IsNullOrWhiteSpace(version) ? string.Empty : $" Ver={version}")
                         + $" {plugin.CreationMode}; init={initInfo}; "
@@ -94,10 +97,12 @@ public sealed class SyncManager : IDisposable
                 _sessions[window.Handle] = plugin;
                 window.BindState = "已绑定";
                 window.SyncState = "同步中";
+                window.CurrentMode = attempts.Last().ModeDescription;
             }
 
             mainWindow!.BindState = "输入源";
             mainWindow.SyncState = "主操作窗口";
+            mainWindow.CurrentMode = "输入源";
 
             _inputSynchronizer.Start(mainWindow!.Handle, targets.Select(target => target.Handle), syncKeyboard, syncMouse);
             IsRunning = true;
@@ -136,6 +141,83 @@ public sealed class SyncManager : IDisposable
 
         _sessions.Clear();
         IsRunning = false;
+    }
+
+    public bool TestBindModes(
+        WindowInfo window,
+        AppConfig currentConfig,
+        string dmDllPath,
+        out BindModeTestReport? report,
+        out string error)
+    {
+        report = null;
+        error = string.Empty;
+
+        if (IsRunning)
+        {
+            error = "请先关闭同步，再测试模式。";
+            return false;
+        }
+
+        if (window.Handle == IntPtr.Zero || !NativeMethods.IsWindow(window.Handle))
+        {
+            error = "目标窗口句柄无效。";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(dmDllPath) || !File.Exists(dmDllPath))
+        {
+            error = "请先设置dm路径";
+            return false;
+        }
+
+        var results = new List<BindModeTestResult>();
+        var initInfo = string.Empty;
+        DmPlugin? plugin = null;
+        try
+        {
+            if (!DmPlugin.TryCreate(dmDllPath, out plugin, out error) || plugin == null)
+            {
+                return false;
+            }
+
+            initInfo = plugin.Initialize(Path.GetDirectoryName(dmDllPath) ?? AppContext.BaseDirectory);
+            ActivateWindow(window.Handle);
+            try
+            {
+                plugin.SetWindowState(window.Handle, 1);
+            }
+            catch
+            {
+                // Match the formal sync path: activation is helpful, but this dm call is optional.
+            }
+
+            foreach (var testCase in BuildBindModeTestCases(currentConfig))
+            {
+                results.Add(RunBindModeTestCase(plugin, window.Handle, testCase));
+            }
+
+            report = new BindModeTestReport(
+                window.Handle,
+                window.Title,
+                plugin.CreationMode,
+                initInfo,
+                results);
+            return true;
+        }
+        finally
+        {
+            try
+            {
+                plugin?.ForceUnBindWindow(window.Handle);
+            }
+            catch
+            {
+                // Test cleanup is best-effort; the next formal bind also clears stale bindings.
+            }
+
+            plugin?.Dispose();
+        }
     }
 
     public void Dispose()
@@ -210,6 +292,11 @@ public sealed class SyncManager : IDisposable
         return string.IsNullOrWhiteSpace(display) || display == "0" ? "normal" : display.Trim();
     }
 
+    private static string NormalizeInput(string input)
+    {
+        return string.IsNullOrWhiteSpace(input) || input == "0" ? "windows" : input.Trim();
+    }
+
     private static void ActivateWindow(IntPtr hwnd)
     {
         NativeMethods.ShowWindow(hwnd, NativeMethods.SW_RESTORE);
@@ -232,7 +319,11 @@ public sealed class SyncManager : IDisposable
 
         if (!hasPublic)
         {
-            attempts.Add(TryBind("BindWindow", plugin, () => plugin.BindWindow(window.Handle, display, mouse, keypad, mode)));
+            attempts.Add(TryBind(
+                "BindWindow",
+                DescribeMode("BindWindow", display, mouse, keypad, string.Empty, mode),
+                plugin,
+                () => plugin.BindWindow(window.Handle, display, mouse, keypad, mode)));
             if (attempts[^1].Result == 1)
             {
                 return attempts;
@@ -240,14 +331,22 @@ public sealed class SyncManager : IDisposable
 
             if (string.Equals(mouse, "windows", StringComparison.OrdinalIgnoreCase))
             {
-                attempts.Add(TryBind("BindWindow(windows3)", plugin, () => plugin.BindWindow(window.Handle, display, "windows3", keypad, mode)));
+                attempts.Add(TryBind(
+                    "BindWindow(windows3)",
+                    DescribeMode("BindWindow", display, "windows3", keypad, string.Empty, mode),
+                    plugin,
+                    () => plugin.BindWindow(window.Handle, display, "windows3", keypad, mode)));
                 if (attempts[^1].Result == 1)
                 {
                     return attempts;
                 }
             }
 
-            attempts.Add(TryBind("BindWindowEx(empty-public)", plugin, () => plugin.BindWindowEx(window.Handle, display, mouse, keypad, string.Empty, mode)));
+            attempts.Add(TryBind(
+                "BindWindowEx(empty-public)",
+                DescribeMode("BindWindowEx", display, mouse, keypad, string.Empty, mode),
+                plugin,
+                () => plugin.BindWindowEx(window.Handle, display, mouse, keypad, string.Empty, mode)));
             if (attempts[^1].Result == 1)
             {
                 return attempts;
@@ -256,43 +355,183 @@ public sealed class SyncManager : IDisposable
             if (string.Equals(mouse, "windows", StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(keypad, "windows", StringComparison.OrdinalIgnoreCase))
             {
-                attempts.Add(TryBind("BindWindow(dx2/dx)", plugin, () => plugin.BindWindow(window.Handle, display, "dx2", "dx", mode)));
+                attempts.Add(TryBind(
+                    "BindWindow(dx2/dx)",
+                    DescribeMode("BindWindow", display, "dx2", "dx", string.Empty, mode),
+                    plugin,
+                    () => plugin.BindWindow(window.Handle, display, "dx2", "dx", mode)));
                 if (attempts[^1].Result == 1)
                 {
                     return attempts;
                 }
 
-                attempts.Add(TryBind("BindWindow(dx/dx)", plugin, () => plugin.BindWindow(window.Handle, display, "dx", "dx", mode)));
+                attempts.Add(TryBind(
+                    "BindWindow(dx/dx)",
+                    DescribeMode("BindWindow", display, "dx", "dx", string.Empty, mode),
+                    plugin,
+                    () => plugin.BindWindow(window.Handle, display, "dx", "dx", mode)));
                 if (attempts[^1].Result == 1)
                 {
                     return attempts;
                 }
 
-                attempts.Add(TryBind("BindWindowEx(dx2/dx active)", plugin, () => plugin.BindWindowEx(
-                    window.Handle,
-                    display,
-                    "dx2",
-                    "dx",
-                    "dx.public.active.api|dx.public.active.message",
-                    mode)));
+                var activePublic = "dx.public.active.api|dx.public.active.message";
+                attempts.Add(TryBind(
+                    "BindWindowEx(dx2/dx active)",
+                    DescribeMode("BindWindowEx", display, "dx2", "dx", activePublic, mode),
+                    plugin,
+                    () => plugin.BindWindowEx(
+                        window.Handle,
+                        display,
+                        "dx2",
+                        "dx",
+                        activePublic,
+                        mode)));
             }
             return attempts;
         }
 
-        attempts.Add(TryBind("BindWindowEx", plugin, () => plugin.BindWindowEx(window.Handle, display, mouse, keypad, publicMode, mode)));
+        attempts.Add(TryBind(
+            "BindWindowEx",
+            DescribeMode("BindWindowEx", display, mouse, keypad, publicMode, mode),
+            plugin,
+            () => plugin.BindWindowEx(window.Handle, display, mouse, keypad, publicMode, mode)));
         if (attempts[^1].Result == 1)
         {
             return attempts;
         }
 
-        attempts.Add(TryBind("BindWindow", plugin, () => plugin.BindWindow(window.Handle, display, mouse, keypad, mode)));
+        attempts.Add(TryBind(
+            "BindWindow",
+            DescribeMode("BindWindow", display, mouse, keypad, string.Empty, mode),
+            plugin,
+            () => plugin.BindWindow(window.Handle, display, mouse, keypad, mode)));
         return attempts;
     }
 
-    private static BindAttempt TryBind(string name, DmPlugin plugin, Func<int> bind)
+    private static BindAttempt TryBind(string name, string modeDescription, DmPlugin plugin, Func<int> bind)
     {
         var result = bind();
-        return new BindAttempt(name, result, plugin.LastError());
+        return new BindAttempt(name, result, plugin.LastError(), modeDescription);
+    }
+
+    private static string DescribeMode(string apiName, string display, string mouse, string keypad, string publicMode, int mode)
+    {
+        var publicText = string.IsNullOrWhiteSpace(publicMode) ? "(空)" : publicMode;
+        return $"dm {apiName}: display={display}, mouse={mouse}, keypad={keypad}, public={publicText}, mode={mode}";
+    }
+
+    private static IReadOnlyList<BindModeTestCase> BuildBindModeTestCases(AppConfig currentConfig)
+    {
+        var cases = new List<BindModeTestCase>();
+        var seen = new HashSet<BindModeTestCase>();
+        var display = NormalizeDisplay(currentConfig.Display);
+        var currentMouse = NormalizeInput(currentConfig.Mouse);
+        var currentKeypad = NormalizeInput(currentConfig.Keypad);
+        var currentPublic = currentConfig.Public.Trim();
+        var currentMode = int.TryParse(currentConfig.Mode, out var parsedMode) ? parsedMode : 0;
+
+        AddCase(new BindModeTestCase(
+            display,
+            currentMouse,
+            currentKeypad,
+            currentPublic,
+            currentMode,
+            UseBindWindowEx: !string.IsNullOrWhiteSpace(currentPublic)));
+        if (string.IsNullOrWhiteSpace(currentPublic))
+        {
+            AddCase(new BindModeTestCase(display, currentMouse, currentKeypad, string.Empty, currentMode, UseBindWindowEx: true));
+        }
+
+        var inputPairs = new (string Mouse, string Keypad)[]
+        {
+            ("windows", "windows"),
+            ("windows3", "windows"),
+            ("dx2", "dx"),
+            ("dx", "dx")
+        };
+        var publicModes = new[]
+        {
+            string.Empty,
+            "dx.public.active.api|dx.public.active.message",
+            "dx.public.anti.api",
+            "dx.public.km.protect"
+        };
+        var modes = new[] { 0, 1, 2, 3, 101, 103 };
+
+        foreach (var mode in modes)
+        {
+            foreach (var inputPair in inputPairs)
+            {
+                foreach (var publicMode in publicModes)
+                {
+                    AddCase(new BindModeTestCase(
+                        display,
+                        inputPair.Mouse,
+                        inputPair.Keypad,
+                        publicMode,
+                        mode,
+                        UseBindWindowEx: !string.IsNullOrWhiteSpace(publicMode)));
+                    if (string.IsNullOrWhiteSpace(publicMode))
+                    {
+                        AddCase(new BindModeTestCase(display, inputPair.Mouse, inputPair.Keypad, string.Empty, mode, UseBindWindowEx: true));
+                    }
+                }
+            }
+        }
+
+        return cases;
+
+        void AddCase(BindModeTestCase testCase)
+        {
+            if (seen.Add(testCase))
+            {
+                cases.Add(testCase);
+            }
+        }
+    }
+
+    private static BindModeTestResult RunBindModeTestCase(DmPlugin plugin, IntPtr hwnd, BindModeTestCase testCase)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var result = 0;
+        try
+        {
+            try
+            {
+                plugin.ForceUnBindWindow(hwnd);
+            }
+            catch
+            {
+                // A failed pre-cleanup should not prevent trying the next combination.
+            }
+
+            result = testCase.UseBindWindowEx
+                ? plugin.BindWindowEx(hwnd, testCase.Display, testCase.Mouse, testCase.Keypad, testCase.Public, testCase.Mode)
+                : plugin.BindWindow(hwnd, testCase.Display, testCase.Mouse, testCase.Keypad, testCase.Mode);
+            var lastError = plugin.LastError();
+            return new BindModeTestResult(testCase, result, lastError, stopwatch.ElapsedMilliseconds, string.Empty);
+        }
+        catch (Exception ex)
+        {
+            return new BindModeTestResult(testCase, 0, int.MinValue, stopwatch.ElapsedMilliseconds, ex.Message);
+        }
+        finally
+        {
+            stopwatch.Stop();
+            try
+            {
+                plugin.ForceUnBindWindow(hwnd);
+                if (result == 1)
+                {
+                    plugin.UnBindWindow();
+                }
+            }
+            catch
+            {
+                // Keep testing even if a particular mode leaves nothing to unbind.
+            }
+        }
     }
 
     private static string BuildWindowDiagnostic(IntPtr hwnd)
@@ -319,5 +558,27 @@ public sealed class SyncManager : IDisposable
         return lastError == int.MinValue ? "读取失败" : lastError.ToString();
     }
 
-    private sealed record BindAttempt(string Name, int Result, int LastError);
+    private sealed record BindAttempt(string Name, int Result, int LastError, string ModeDescription);
 }
+
+public sealed record BindModeTestCase(string Display, string Mouse, string Keypad, string Public, int Mode, bool UseBindWindowEx)
+{
+    public string ApiName => UseBindWindowEx ? "BindWindowEx" : "BindWindow";
+}
+
+public sealed record BindModeTestResult(
+    BindModeTestCase TestCase,
+    int Result,
+    int LastError,
+    long ElapsedMs,
+    string Error)
+{
+    public bool Success => Result == 1;
+}
+
+public sealed record BindModeTestReport(
+    IntPtr WindowHandle,
+    string WindowTitle,
+    string DmCreationMode,
+    string InitInfo,
+    IReadOnlyList<BindModeTestResult> Results);

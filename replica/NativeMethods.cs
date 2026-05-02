@@ -22,6 +22,8 @@ internal static class NativeMethods
     public const int WM_MOUSEWHEEL = 0x020A;
     public const int WM_XBUTTONDOWN = 0x020B;
     public const int WM_XBUTTONUP = 0x020C;
+    public const int XBUTTON1 = 1;
+    public const int XBUTTON2 = 2;
     public const uint GW_HWNDNEXT = 2;
     public const int SW_RESTORE = 9;
 
@@ -131,4 +133,9 @@ internal static class NativeMethods
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern IntPtr GetModuleHandle(string? moduleName);
+
+    public static int GetXButton(uint mouseData)
+    {
+        return (int)((mouseData >> 16) & 0xffff);
+    }
 }

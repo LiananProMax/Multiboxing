@@ -94,6 +94,11 @@ public sealed class InputSynchronizer : IDisposable
                 or NativeMethods.WM_XBUTTONUP)
             {
                 var data = Marshal.PtrToStructure<NativeMethods.MSLLHOOKSTRUCT>(lParam);
+                if (IsSideButtonToggleMessage(message, data.MouseData))
+                {
+                    return NativeMethods.CallNextHookEx(_mouseHook, nCode, wParam, lParam);
+                }
+
                 if (PointInsideWindow(_mainWindow, data.Pt))
                 {
                     foreach (var target in _targets)
@@ -117,6 +122,12 @@ public sealed class InputSynchronizer : IDisposable
 
         var root = NativeMethods.GetAncestor(foreground, NativeMethods.GA_ROOT);
         return root == _mainWindow || NativeMethods.IsChild(_mainWindow, foreground);
+    }
+
+    private static bool IsSideButtonToggleMessage(int message, uint mouseData)
+    {
+        return message is NativeMethods.WM_XBUTTONDOWN or NativeMethods.WM_XBUTTONUP
+            && NativeMethods.GetXButton(mouseData) == NativeMethods.XBUTTON1;
     }
 
     private static bool PointInsideWindow(IntPtr hwnd, NativeMethods.POINT point)

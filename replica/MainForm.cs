@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text;
 
 namespace KeyMouseSyncReplica;
 
@@ -6,6 +7,7 @@ public sealed class MainForm : Form
 {
     private readonly ConfigService _configService = new();
     private readonly SyncManager _syncManager = new();
+    private readonly MouseSideButtonToggleHook _sideButtonToggleHook = new();
     private readonly BindingList<WindowInfo> _windows = new();
     private readonly ComboBox _dmComboBox = new();
     private readonly ComboBox _displayComboBox = new();
@@ -18,9 +20,11 @@ public sealed class MainForm : Form
     private readonly Label _mainWindowLabel = new();
     private readonly ListView _windowList = new();
     private readonly Button _toggleSyncButton = new();
+    private readonly Button _testModesButton = new();
     private readonly Label _pickerHintLabel = new();
     private readonly TargetPickerControl _targetPicker = new();
     private WindowInfo? _mainWindow;
+    private bool _isTestingModes;
 
     public MainForm()
     {
@@ -32,10 +36,22 @@ public sealed class MainForm : Form
         BuildUi();
         PopulateChoices();
         LoadConfigToControls();
+        _sideButtonToggleHook.ToggleRequested += HandleSideButtonToggleRequested;
+    }
+
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+
+        if (!_sideButtonToggleHook.Start(out var error))
+        {
+            ShowWarning(error);
+        }
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
+        _sideButtonToggleHook.Dispose();
         SaveConfigFromControls();
         _syncManager.Dispose();
         base.OnFormClosing(e);
@@ -80,9 +96,10 @@ public sealed class MainForm : Form
         _windowList.Columns.Add("id", 70);
         _windowList.Columns.Add("窗口句柄", 120);
         _windowList.Columns.Add("进程id", 85);
-        _windowList.Columns.Add("窗口标题", 430);
+        _windowList.Columns.Add("窗口标题", 350);
         _windowList.Columns.Add("绑定状态", 110);
         _windowList.Columns.Add("同步状态", 120);
+        _windowList.Columns.Add("当前模式", 320);
         listGroup.Controls.Add(_windowList);
         root.Controls.Add(listGroup, 0, 1);
 
@@ -152,11 +169,12 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 4,
+            RowCount = 5,
             Padding = new Padding(10)
         };
         commandPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         commandPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        commandPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         commandPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         commandPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         commandPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
@@ -190,6 +208,12 @@ public sealed class MainForm : Form
         _mouseCheckBox.Checked = true;
         commandPanel.Controls.Add(_mouseCheckBox, 1, 2);
 
+        _testModesButton.Dock = DockStyle.Fill;
+        _testModesButton.Text = "测试模式";
+        _testModesButton.Click += async (_, _) => await TestSelectedWindowModesAsync();
+        commandPanel.SetColumnSpan(_testModesButton, 2);
+        commandPanel.Controls.Add(_testModesButton, 0, 3);
+
         var hint = new Label
         {
             Dock = DockStyle.Fill,
@@ -197,7 +221,7 @@ public sealed class MainForm : Form
             TextAlign = ContentAlignment.TopLeft
         };
         commandPanel.SetColumnSpan(hint, 2);
-        commandPanel.Controls.Add(hint, 0, 3);
+        commandPanel.Controls.Add(hint, 0, 4);
 
         var configGroup = new GroupBox
         {
@@ -418,6 +442,12 @@ public sealed class MainForm : Form
 
     private void ToggleSync()
     {
+        if (_isTestingModes)
+        {
+            ShowWarning("正在测试模式，请等待完成。");
+            return;
+        }
+
         if (_syncManager.IsRunning)
         {
             _syncManager.Stop();
@@ -451,6 +481,218 @@ public sealed class MainForm : Form
 
         _toggleSyncButton.Text = "关闭同步";
         RefreshWindowList();
+    }
+
+    private async Task TestSelectedWindowModesAsync()
+    {
+        if (_isTestingModes)
+        {
+            return;
+        }
+
+        if (_syncManager.IsRunning)
+        {
+            ShowWarning("请先关闭同步，再测试模式。");
+            return;
+        }
+
+        var selected = GetSelectedWindow();
+        if (selected == null)
+        {
+            ShowWarning("请先选择一个要测试的同步目标窗口。");
+            return;
+        }
+
+        if (_mainWindow?.Handle == selected.Handle || selected.IsMain)
+        {
+            ShowWarning("主操作窗口不需要测试，请选择一个同步目标窗口。");
+            return;
+        }
+
+        var dmPath = GetSelectedDmDllPath();
+        if (string.IsNullOrWhiteSpace(dmPath))
+        {
+            ShowWarning("请先设置dm路径");
+            return;
+        }
+
+        var config = BuildConfigFromControls();
+        _isTestingModes = true;
+        _testModesButton.Enabled = false;
+        _toggleSyncButton.Enabled = false;
+        _testModesButton.Text = "测试中...";
+
+        try
+        {
+            var result = await TestBindModesOnStaThreadAsync(selected, config, dmPath);
+            if (!result.Success || result.Report == null)
+            {
+                ShowWarning(result.Error);
+                return;
+            }
+
+            MessageBox.Show(
+                this,
+                FormatBindModeTestReport(result.Report, IsMessageFallbackAvailable(selected)),
+                "模式测试结果",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+        finally
+        {
+            _isTestingModes = false;
+            _testModesButton.Enabled = true;
+            _toggleSyncButton.Enabled = true;
+            _testModesButton.Text = "测试模式";
+        }
+    }
+
+    private Task<(bool Success, BindModeTestReport? Report, string Error)> TestBindModesOnStaThreadAsync(
+        WindowInfo window,
+        AppConfig config,
+        string dmPath)
+    {
+        var completion = new TaskCompletionSource<(bool Success, BindModeTestReport? Report, string Error)>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var success = _syncManager.TestBindModes(window, config, dmPath, out var report, out var error);
+                completion.SetResult((success, report, error));
+            }
+            catch (Exception ex)
+            {
+                completion.SetResult((false, null, $"测试模式失败：{ex.Message}"));
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "BindModeTest"
+        };
+
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        return completion.Task;
+    }
+
+    private bool IsMessageFallbackAvailable(WindowInfo target)
+    {
+        return _mainWindow != null
+            && _mainWindow.Handle != target.Handle
+            && NativeMethods.IsWindow(_mainWindow.Handle)
+            && NativeMethods.IsWindow(target.Handle)
+            && (_keyboardCheckBox.Checked || _mouseCheckBox.Checked);
+    }
+
+    private static string FormatBindModeTestReport(BindModeTestReport report, bool messageFallbackAvailable)
+    {
+        var successes = report.Results.Where(result => result.Success).ToArray();
+        var failures = report.Results.Count - successes.Length;
+        var title = string.IsNullOrWhiteSpace(report.WindowTitle) ? "(无标题窗口)" : report.WindowTitle;
+
+        var builder = new StringBuilder();
+        builder.AppendLine($"窗口：0x{report.WindowHandle.ToInt64():X}  {title}");
+        builder.AppendLine($"dm：{report.DmCreationMode}");
+        builder.AppendLine($"初始化：{report.InitInfo}");
+        builder.AppendLine($"dm测试组合：{report.Results.Count}，dm可用：{successes.Length}，失败：{failures}");
+        builder.AppendLine();
+
+        if (successes.Length == 0)
+        {
+            builder.AppendLine("没有找到可用的 dm 后台绑定组合。");
+        }
+        else
+        {
+            builder.AppendLine("可用 dm 组合：");
+            for (var i = 0; i < successes.Length; i++)
+            {
+                var result = successes[i];
+                var testCase = result.TestCase;
+                builder.AppendLine(
+                    $"{i + 1}. display={testCase.Display}, mouse={testCase.Mouse}, keypad={testCase.Keypad}, " +
+                    $"public={FormatPublicMode(testCase.Public)}, mode={testCase.Mode} " +
+                    $"[{testCase.ApiName}, {result.ElapsedMs}ms]");
+            }
+        }
+
+        if (messageFallbackAvailable)
+        {
+            builder.AppendLine();
+            builder.AppendLine("可用同步方式：");
+            builder.AppendLine("- Windows 消息同步兜底：可用。正式同步在 dm 绑定失败时仍会使用它转发键鼠消息。");
+        }
+
+        if (failures > 0)
+        {
+            builder.AppendLine();
+            builder.AppendLine("失败摘要：");
+            foreach (var group in report.Results
+                         .Where(result => !result.Success)
+                         .GroupBy(DescribeFailure)
+                         .OrderByDescending(group => group.Count())
+                         .ThenBy(group => group.Key, StringComparer.Ordinal)
+                         .Take(8))
+            {
+                builder.AppendLine($"- {group.Key}：{group.Count()} 个组合");
+            }
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("当前配置不会自动修改，请按可用组合手动调整绑定配置。");
+        return builder.ToString();
+    }
+
+    private static string DescribeFailure(BindModeTestResult result)
+    {
+        if (!string.IsNullOrWhiteSpace(result.Error))
+        {
+            return $"异常={result.Error}";
+        }
+
+        return $"返回={result.Result}, LastError={FormatLastError(result.LastError)}";
+    }
+
+    private static string FormatPublicMode(string publicMode)
+    {
+        return string.IsNullOrWhiteSpace(publicMode) ? "(空)" : publicMode;
+    }
+
+    private static string FormatLastError(int lastError)
+    {
+        return lastError == int.MinValue ? "读取失败" : lastError.ToString();
+    }
+
+    private void HandleSideButtonToggleRequested(object? sender, EventArgs e)
+    {
+        if (IsDisposed || Disposing)
+        {
+            return;
+        }
+
+        try
+        {
+            BeginInvoke((MethodInvoker)ToggleSyncFromShortcut);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Ignore late hook callbacks after the form has started closing.
+        }
+        catch (InvalidOperationException)
+        {
+            // The form handle can disappear during shutdown while the low-level hook is unwinding.
+        }
+    }
+
+    private void ToggleSyncFromShortcut()
+    {
+        if (IsDisposed || Disposing)
+        {
+            return;
+        }
+
+        ToggleSync();
     }
 
     private void RegisterSelectedDm()
@@ -494,6 +736,7 @@ public sealed class MainForm : Form
                 item.SubItems.Add(window.DisplayTitle);
                 item.SubItems.Add(window.BindState);
                 item.SubItems.Add(window.SyncState);
+                item.SubItems.Add(window.CurrentMode);
                 _windowList.Items.Add(item);
             }
         }

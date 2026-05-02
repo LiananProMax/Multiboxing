@@ -7,6 +7,7 @@ public sealed class WindowInfo : INotifyPropertyChanged
     private bool _isMain;
     private string _bindState = "未绑定";
     private string _syncState = "未同步";
+    private string _currentMode = "未同步";
     private string _lastError = string.Empty;
 
     public WindowInfo(IntPtr handle, int processId, string title)
@@ -37,6 +38,7 @@ public sealed class WindowInfo : INotifyPropertyChanged
             _isMain = value;
             OnPropertyChanged(nameof(IsMain));
             OnPropertyChanged(nameof(SyncState));
+            OnPropertyChanged(nameof(CurrentMode));
             OnPropertyChanged(nameof(DisplayTitle));
         }
     }
@@ -75,6 +77,21 @@ public sealed class WindowInfo : INotifyPropertyChanged
 
     public string DisplayTitle => IsMain ? $"{Title} [主]" : Title;
 
+    public string CurrentMode
+    {
+        get => IsMain ? "输入源" : _currentMode;
+        set
+        {
+            if (_currentMode == value)
+            {
+                return;
+            }
+
+            _currentMode = value;
+            OnPropertyChanged(nameof(CurrentMode));
+        }
+    }
+
     public string LastError
     {
         get => _lastError;
@@ -94,6 +111,7 @@ public sealed class WindowInfo : INotifyPropertyChanged
     {
         BindState = "未绑定";
         SyncState = "未同步";
+        CurrentMode = "未同步";
         LastError = string.Empty;
     }
 
