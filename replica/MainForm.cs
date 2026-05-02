@@ -5,37 +5,27 @@ namespace KeyMouseSyncReplica;
 
 public sealed class MainForm : Form
 {
-    private readonly ConfigService _configService = new();
     private readonly SyncManager _syncManager = new();
     private readonly MouseSideButtonToggleHook _sideButtonToggleHook = new();
     private readonly BindingList<WindowInfo> _windows = new();
-    private readonly ComboBox _dmComboBox = new();
-    private readonly ComboBox _displayComboBox = new();
-    private readonly ComboBox _mouseComboBox = new();
-    private readonly ComboBox _keypadComboBox = new();
-    private readonly ComboBox _publicComboBox = new();
-    private readonly ComboBox _modeComboBox = new();
     private readonly CheckBox _keyboardCheckBox = new();
     private readonly CheckBox _mouseCheckBox = new();
     private readonly Label _mainWindowLabel = new();
     private readonly ListView _windowList = new();
     private readonly Button _toggleSyncButton = new();
-    private readonly Button _testModesButton = new();
+    private readonly Button _testMessageButton = new();
     private readonly Label _pickerHintLabel = new();
     private readonly TargetPickerControl _targetPicker = new();
     private WindowInfo? _mainWindow;
-    private bool _isTestingModes;
 
     public MainForm()
     {
-        Text = "多窗口键鼠同步器 - MessageFallback";
+        Text = "多窗口键鼠同步器 - Windows Message";
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(1080, 760);
-        Size = new Size(1120, 800);
+        MinimumSize = new Size(1080, 720);
+        Size = new Size(1120, 760);
 
         BuildUi();
-        PopulateChoices();
-        LoadConfigToControls();
         _sideButtonToggleHook.ToggleRequested += HandleSideButtonToggleRequested;
     }
 
@@ -52,7 +42,6 @@ public sealed class MainForm : Form
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         _sideButtonToggleHook.Dispose();
-        SaveConfigFromControls();
         _syncManager.Dispose();
         base.OnFormClosing(e);
     }
@@ -68,14 +57,14 @@ public sealed class MainForm : Form
         };
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 78));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 250));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 230));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         Controls.Add(root);
 
         var title = new Label
         {
             Dock = DockStyle.Fill,
-            Text = "多窗口键鼠同步--基于dm插件(免注册)\r\n注: 鼠标在主操作窗口上时才同步操作",
+            Text = "多窗口键鼠同步--Windows 消息同步\r\n注：鼠标在主操作窗口上时才同步操作",
             TextAlign = ContentAlignment.MiddleLeft,
             Padding = new Padding(4, 0, 0, 0),
             Font = new Font(Font.FontFamily, 10.5f, FontStyle.Bold)
@@ -97,9 +86,9 @@ public sealed class MainForm : Form
         _windowList.Columns.Add("窗口句柄", 120);
         _windowList.Columns.Add("进程id", 85);
         _windowList.Columns.Add("窗口标题", 350);
-        _windowList.Columns.Add("绑定状态", 110);
+        _windowList.Columns.Add("消息状态", 110);
         _windowList.Columns.Add("同步状态", 120);
-        _windowList.Columns.Add("当前模式", 320);
+        _windowList.Columns.Add("当前模式", 300);
         listGroup.Controls.Add(_windowList);
         root.Controls.Add(listGroup, 0, 1);
 
@@ -208,141 +197,44 @@ public sealed class MainForm : Form
         _mouseCheckBox.Checked = true;
         commandPanel.Controls.Add(_mouseCheckBox, 1, 2);
 
-        _testModesButton.Dock = DockStyle.Fill;
-        _testModesButton.Text = "测试模式";
-        _testModesButton.Click += async (_, _) => await TestSelectedWindowModesAsync();
-        commandPanel.SetColumnSpan(_testModesButton, 2);
-        commandPanel.Controls.Add(_testModesButton, 0, 3);
+        _testMessageButton.Dock = DockStyle.Fill;
+        _testMessageButton.Text = "测试消息同步";
+        _testMessageButton.Click += (_, _) => TestSelectedWindowMessage();
+        commandPanel.SetColumnSpan(_testMessageButton, 2);
+        commandPanel.Controls.Add(_testMessageButton, 0, 3);
 
-        var hint = new Label
+        var shortcutHint = new Label
         {
             Dock = DockStyle.Fill,
-            Text = "提示：public 为空时使用 BindWindow，非空时使用 BindWindowEx。",
+            Text = "提示：鼠标侧键1（后退键/XButton1）可快捷开启或关闭同步。",
             TextAlign = ContentAlignment.TopLeft
         };
-        commandPanel.SetColumnSpan(hint, 2);
-        commandPanel.Controls.Add(hint, 0, 4);
+        commandPanel.SetColumnSpan(shortcutHint, 2);
+        commandPanel.Controls.Add(shortcutHint, 0, 4);
 
-        var configGroup = new GroupBox
+        var messageGroup = new GroupBox
         {
             Dock = DockStyle.Fill,
-            Text = "绑定配置"
+            Text = "Windows 消息同步"
         };
-        operationGrid.Controls.Add(configGroup, 2, 0);
+        operationGrid.Controls.Add(messageGroup, 2, 0);
 
-        var configGrid = new TableLayoutPanel
+        var messageHint = new Label
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 4,
-            RowCount = 4,
-            Padding = new Padding(10)
+            Padding = new Padding(12),
+            Text = "当前版本只使用 Windows 消息同步：程序捕获主操作窗口上的键鼠事件，" +
+                "再通过 PostMessage 转发到目标窗口。\r\n\r\n" +
+                "“测试消息同步”会向目标窗口发送 WM_NULL 探针，只检查消息队列是否接受投递；" +
+                "真实键鼠效果仍取决于目标程序是否处理对应的键盘和鼠标消息。",
+            TextAlign = ContentAlignment.TopLeft
         };
-        configGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70));
-        configGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        configGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70));
-        configGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        configGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        configGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        configGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        configGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        configGroup.Controls.Add(configGrid);
-
-        AddLabel(configGrid, "dm：", 0, 0);
-        _dmComboBox.Dock = DockStyle.Fill;
-        _dmComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
-        configGrid.SetColumnSpan(_dmComboBox, 2);
-        configGrid.Controls.Add(_dmComboBox, 1, 0);
-
-        var registerButton = new Button { Dock = DockStyle.Fill, Text = "注册dm" };
-        registerButton.Click += (_, _) => RegisterSelectedDm();
-        configGrid.Controls.Add(registerButton, 3, 0);
-
-        AddLabel(configGrid, "display：", 0, 1);
-        _displayComboBox.Dock = DockStyle.Fill;
-        _displayComboBox.DropDownStyle = ComboBoxStyle.DropDown;
-        configGrid.Controls.Add(_displayComboBox, 1, 1);
-
-        AddLabel(configGrid, "mouse：", 2, 1);
-        _mouseComboBox.Dock = DockStyle.Fill;
-        _mouseComboBox.DropDownStyle = ComboBoxStyle.DropDown;
-        configGrid.Controls.Add(_mouseComboBox, 3, 1);
-
-        AddLabel(configGrid, "keypad：", 0, 2);
-        _keypadComboBox.Dock = DockStyle.Fill;
-        _keypadComboBox.DropDownStyle = ComboBoxStyle.DropDown;
-        configGrid.Controls.Add(_keypadComboBox, 1, 2);
-
-        AddLabel(configGrid, "mode：", 2, 2);
-        _modeComboBox.Dock = DockStyle.Fill;
-        _modeComboBox.DropDownStyle = ComboBoxStyle.DropDown;
-        configGrid.Controls.Add(_modeComboBox, 3, 2);
-
-        AddLabel(configGrid, "public：", 0, 3);
-        _publicComboBox.Dock = DockStyle.Fill;
-        _publicComboBox.DropDownStyle = ComboBoxStyle.DropDown;
-        configGrid.SetColumnSpan(_publicComboBox, 3);
-        configGrid.Controls.Add(_publicComboBox, 1, 3);
+        messageGroup.Controls.Add(messageHint);
 
         _mainWindowLabel.Dock = DockStyle.Fill;
         _mainWindowLabel.TextAlign = ContentAlignment.MiddleLeft;
         _mainWindowLabel.Text = "主操作窗口句柄：未设置";
         root.Controls.Add(_mainWindowLabel, 0, 3);
-    }
-
-    private void PopulateChoices()
-    {
-        _dmComboBox.Items.Clear();
-        foreach (var dll in FindDmDlls())
-        {
-            _dmComboBox.Items.Add(new DmDllChoice(dll));
-        }
-
-        if (_dmComboBox.Items.Count > 0)
-        {
-            _dmComboBox.SelectedIndex = 0;
-        }
-
-        _displayComboBox.Items.AddRange(new object[] { "normal", "gdi", "gdi2", "dx", "dx2" });
-        _mouseComboBox.Items.AddRange(new object[] { "windows", "windows2", "windows3", "dx", "dx2" });
-        _keypadComboBox.Items.AddRange(new object[] { "windows", "dx" });
-        _publicComboBox.Items.AddRange(new object[]
-        {
-            string.Empty,
-            "dx.public.active.api|dx.public.active.message",
-            "dx.public.hide.dll",
-            "dx.public.anti.api",
-            "dx.public.km.protect"
-        });
-        _modeComboBox.Items.AddRange(new object[] { "0", "1", "2", "3", "4", "5", "6", "7", "101", "103" });
-    }
-
-    private void LoadConfigToControls()
-    {
-        var config = _configService.Load();
-        SelectDm(config.Dm);
-        _displayComboBox.Text = NormalizeDisplayMode(config.Display);
-        _mouseComboBox.Text = NormalizeInputMode(config.Mouse);
-        _keypadComboBox.Text = NormalizeInputMode(config.Keypad);
-        _publicComboBox.Text = config.Public;
-        _modeComboBox.Text = config.Mode;
-    }
-
-    private void SaveConfigFromControls()
-    {
-        _configService.Save(BuildConfigFromControls());
-    }
-
-    private AppConfig BuildConfigFromControls()
-    {
-        return new AppConfig
-        {
-            Dm = _dmComboBox.SelectedIndex >= 0 ? _dmComboBox.SelectedIndex.ToString() : "0",
-            Display = NormalizeDisplayMode(_displayComboBox.Text),
-            Mouse = _mouseComboBox.Text.Trim(),
-            Keypad = _keypadComboBox.Text.Trim(),
-            Public = _publicComboBox.Text.Trim(),
-            Mode = _modeComboBox.Text.Trim()
-        };
     }
 
     private void AddWindowFromCursor(bool setAsMain)
@@ -442,12 +334,6 @@ public sealed class MainForm : Form
 
     private void ToggleSync()
     {
-        if (_isTestingModes)
-        {
-            ShowWarning("正在测试模式，请等待完成。");
-            return;
-        }
-
         if (_syncManager.IsRunning)
         {
             _syncManager.Stop();
@@ -461,15 +347,9 @@ public sealed class MainForm : Form
             return;
         }
 
-        var config = BuildConfigFromControls();
-        SaveConfigFromControls();
-
-        var dmPath = GetSelectedDmDllPath();
         if (!_syncManager.Start(
                 _windows.ToArray(),
                 _mainWindow,
-                config,
-                dmPath,
                 _keyboardCheckBox.Checked,
                 _mouseCheckBox.Checked,
                 out var error))
@@ -483,19 +363,8 @@ public sealed class MainForm : Form
         RefreshWindowList();
     }
 
-    private async Task TestSelectedWindowModesAsync()
+    private void TestSelectedWindowMessage()
     {
-        if (_isTestingModes)
-        {
-            return;
-        }
-
-        if (_syncManager.IsRunning)
-        {
-            ShowWarning("请先关闭同步，再测试模式。");
-            return;
-        }
-
         var selected = GetSelectedWindow();
         if (selected == null)
         {
@@ -503,165 +372,52 @@ public sealed class MainForm : Form
             return;
         }
 
-        if (_mainWindow?.Handle == selected.Handle || selected.IsMain)
+        if (!_syncManager.TestMessageFallback(
+                _mainWindow,
+                selected,
+                _keyboardCheckBox.Checked,
+                _mouseCheckBox.Checked,
+                out var report,
+                out var error) || report == null)
         {
-            ShowWarning("主操作窗口不需要测试，请选择一个同步目标窗口。");
+            ShowWarning(error);
             return;
         }
 
-        var dmPath = GetSelectedDmDllPath();
-        if (string.IsNullOrWhiteSpace(dmPath))
-        {
-            ShowWarning("请先设置dm路径");
-            return;
-        }
-
-        var config = BuildConfigFromControls();
-        _isTestingModes = true;
-        _testModesButton.Enabled = false;
-        _toggleSyncButton.Enabled = false;
-        _testModesButton.Text = "测试中...";
-
-        try
-        {
-            var result = await TestBindModesOnStaThreadAsync(selected, config, dmPath);
-            if (!result.Success || result.Report == null)
-            {
-                ShowWarning(result.Error);
-                return;
-            }
-
-            MessageBox.Show(
-                this,
-                FormatBindModeTestReport(result.Report, IsMessageFallbackAvailable(selected)),
-                "模式测试结果",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
-        }
-        finally
-        {
-            _isTestingModes = false;
-            _testModesButton.Enabled = true;
-            _toggleSyncButton.Enabled = true;
-            _testModesButton.Text = "测试模式";
-        }
+        MessageBox.Show(
+            this,
+            FormatMessageFallbackTestReport(report),
+            "消息同步测试结果",
+            MessageBoxButtons.OK,
+            report.CanPostMessage ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
     }
 
-    private Task<(bool Success, BindModeTestReport? Report, string Error)> TestBindModesOnStaThreadAsync(
-        WindowInfo window,
-        AppConfig config,
-        string dmPath)
+    private static string FormatMessageFallbackTestReport(MessageFallbackTestReport report)
     {
-        var completion = new TaskCompletionSource<(bool Success, BindModeTestReport? Report, string Error)>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                var success = _syncManager.TestBindModes(window, config, dmPath, out var report, out var error);
-                completion.SetResult((success, report, error));
-            }
-            catch (Exception ex)
-            {
-                completion.SetResult((false, null, $"测试模式失败：{ex.Message}"));
-            }
-        })
-        {
-            IsBackground = true,
-            Name = "BindModeTest"
-        };
-
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        return completion.Task;
-    }
-
-    private bool IsMessageFallbackAvailable(WindowInfo target)
-    {
-        return _mainWindow != null
-            && _mainWindow.Handle != target.Handle
-            && NativeMethods.IsWindow(_mainWindow.Handle)
-            && NativeMethods.IsWindow(target.Handle)
-            && (_keyboardCheckBox.Checked || _mouseCheckBox.Checked);
-    }
-
-    private static string FormatBindModeTestReport(BindModeTestReport report, bool messageFallbackAvailable)
-    {
-        var successes = report.Results.Where(result => result.Success).ToArray();
-        var failures = report.Results.Count - successes.Length;
-        var title = string.IsNullOrWhiteSpace(report.WindowTitle) ? "(无标题窗口)" : report.WindowTitle;
-
         var builder = new StringBuilder();
-        builder.AppendLine($"窗口：0x{report.WindowHandle.ToInt64():X}  {title}");
-        builder.AppendLine($"dm：{report.DmCreationMode}");
-        builder.AppendLine($"初始化：{report.InitInfo}");
-        builder.AppendLine($"dm测试组合：{report.Results.Count}，dm可用：{successes.Length}，失败：{failures}");
+        builder.AppendLine($"主窗口：0x{report.MainWindowHandle.ToInt64():X}  {FormatTitle(report.MainWindowTitle)}");
+        builder.AppendLine($"目标窗口：0x{report.TargetWindowHandle.ToInt64():X}  {FormatTitle(report.TargetWindowTitle)}");
         builder.AppendLine();
-
-        if (successes.Length == 0)
+        builder.AppendLine($"消息投递探针（WM_NULL）：{(report.CanPostMessage ? "可用" : "失败")}");
+        if (!report.CanPostMessage)
         {
-            builder.AppendLine("没有找到可用的 dm 后台绑定组合。");
-        }
-        else
-        {
-            builder.AppendLine("可用 dm 组合：");
-            for (var i = 0; i < successes.Length; i++)
-            {
-                var result = successes[i];
-                var testCase = result.TestCase;
-                builder.AppendLine(
-                    $"{i + 1}. display={testCase.Display}, mouse={testCase.Mouse}, keypad={testCase.Keypad}, " +
-                    $"public={FormatPublicMode(testCase.Public)}, mode={testCase.Mode} " +
-                    $"[{testCase.ApiName}, {result.ElapsedMs}ms]");
-            }
-        }
-
-        if (messageFallbackAvailable)
-        {
-            builder.AppendLine();
-            builder.AppendLine("可用同步方式：");
-            builder.AppendLine("- Windows 消息同步兜底：可用。正式同步在 dm 绑定失败时仍会使用它转发键鼠消息。");
-        }
-
-        if (failures > 0)
-        {
-            builder.AppendLine();
-            builder.AppendLine("失败摘要：");
-            foreach (var group in report.Results
-                         .Where(result => !result.Success)
-                         .GroupBy(DescribeFailure)
-                         .OrderByDescending(group => group.Count())
-                         .ThenBy(group => group.Key, StringComparer.Ordinal)
-                         .Take(8))
-            {
-                builder.AppendLine($"- {group.Key}：{group.Count()} 个组合");
-            }
+            builder.AppendLine($"Win32 错误码：{report.LastWin32Error}");
         }
 
         builder.AppendLine();
-        builder.AppendLine("当前配置不会自动修改，请按可用组合手动调整绑定配置。");
+        builder.AppendLine("正式同步路径：");
+        builder.AppendLine($"- 键盘消息：{(report.SyncKeyboard ? "启用，将转发 WM_KEY*/WM_SYSKEY*" : "未启用")}");
+        builder.AppendLine($"- 鼠标消息：{(report.SyncMouse ? "启用，将转发 WM_MOUSE*" : "未启用")}");
+        builder.AppendLine();
+        builder.AppendLine(report.CanPostMessage
+            ? "目标窗口接受 Windows 消息投递。真实键鼠效果仍取决于目标程序是否处理这些消息。"
+            : "目标窗口当前无法接受 PostMessage 投递，正式同步可能无效。");
         return builder.ToString();
     }
 
-    private static string DescribeFailure(BindModeTestResult result)
+    private static string FormatTitle(string title)
     {
-        if (!string.IsNullOrWhiteSpace(result.Error))
-        {
-            return $"异常={result.Error}";
-        }
-
-        return $"返回={result.Result}, LastError={FormatLastError(result.LastError)}";
-    }
-
-    private static string FormatPublicMode(string publicMode)
-    {
-        return string.IsNullOrWhiteSpace(publicMode) ? "(空)" : publicMode;
-    }
-
-    private static string FormatLastError(int lastError)
-    {
-        return lastError == int.MinValue ? "读取失败" : lastError.ToString();
+        return string.IsNullOrWhiteSpace(title) ? "(无标题窗口)" : title;
     }
 
     private void HandleSideButtonToggleRequested(object? sender, EventArgs e)
@@ -693,19 +449,6 @@ public sealed class MainForm : Form
         }
 
         ToggleSync();
-    }
-
-    private void RegisterSelectedDm()
-    {
-        var dmPath = GetSelectedDmDllPath();
-        if (string.IsNullOrWhiteSpace(dmPath))
-        {
-            ShowWarning("请先设置dm路径");
-            return;
-        }
-
-        var ok = DmPlugin.RegisterDll(dmPath, elevated: true, out var message);
-        MessageBox.Show(this, message, ok ? "注册dm" : "注册dm失败", MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
     }
 
     private WindowInfo? GetSelectedWindow()
@@ -746,94 +489,8 @@ public sealed class MainForm : Form
         }
     }
 
-    private string GetSelectedDmDllPath()
-    {
-        return _dmComboBox.SelectedItem is DmDllChoice choice ? choice.Path : string.Empty;
-    }
-
-    private void SelectDm(string value)
-    {
-        if (int.TryParse(value, out var index) && index >= 0 && index < _dmComboBox.Items.Count)
-        {
-            _dmComboBox.SelectedIndex = index;
-            return;
-        }
-
-        for (var i = 0; i < _dmComboBox.Items.Count; i++)
-        {
-            if (_dmComboBox.Items[i] is DmDllChoice choice
-                && (string.Equals(choice.Path, value, StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(choice.FileName, value, StringComparison.OrdinalIgnoreCase)))
-            {
-                _dmComboBox.SelectedIndex = i;
-                return;
-            }
-        }
-
-        if (_dmComboBox.Items.Count > 0)
-        {
-            _dmComboBox.SelectedIndex = 0;
-        }
-    }
-
-    private static void AddLabel(TableLayoutPanel panel, string text, int column, int row)
-    {
-        panel.Controls.Add(new Label
-        {
-            Dock = DockStyle.Fill,
-            Text = text,
-            TextAlign = ContentAlignment.MiddleRight
-        }, column, row);
-    }
-
-    private static string NormalizeInputMode(string value)
-    {
-        return string.IsNullOrWhiteSpace(value) || value.Trim() == "0" ? "windows" : value.Trim();
-    }
-
-    private static string NormalizeDisplayMode(string value)
-    {
-        return string.IsNullOrWhiteSpace(value) || value.Trim() == "0" ? "normal" : value.Trim();
-    }
-
-    private static IEnumerable<string> FindDmDlls()
-    {
-        var directories = new[]
-        {
-            AppContext.BaseDirectory,
-            Environment.CurrentDirectory,
-            Directory.GetParent(AppContext.BaseDirectory)?.Parent?.Parent?.Parent?.FullName
-        }
-        .Where(directory => !string.IsNullOrWhiteSpace(directory))
-        .Distinct(StringComparer.OrdinalIgnoreCase);
-
-        return directories
-            .SelectMany(directory => Directory.Exists(directory!) ? Directory.GetFiles(directory!, "dm*.dll") : Array.Empty<string>())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderByDescending(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-    }
-
     private void ShowWarning(string message)
     {
         MessageBox.Show(this, message, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-    }
-
-    private sealed class DmDllChoice
-    {
-        public DmDllChoice(string path)
-        {
-            Path = path;
-            FileName = System.IO.Path.GetFileName(path);
-        }
-
-        public string Path { get; }
-
-        public string FileName { get; }
-
-        public override string ToString()
-        {
-            return FileName;
-        }
     }
 }

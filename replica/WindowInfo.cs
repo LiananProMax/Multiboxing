@@ -5,7 +5,7 @@ namespace KeyMouseSyncReplica;
 public sealed class WindowInfo : INotifyPropertyChanged
 {
     private bool _isMain;
-    private string _bindState = "未绑定";
+    private string _bindState = "未就绪";
     private string _syncState = "未同步";
     private string _currentMode = "未同步";
     private string _lastError = string.Empty;
@@ -109,7 +109,7 @@ public sealed class WindowInfo : INotifyPropertyChanged
 
     public void ResetRuntimeState()
     {
-        BindState = "未绑定";
+        BindState = "未就绪";
         SyncState = "未同步";
         CurrentMode = "未同步";
         LastError = string.Empty;

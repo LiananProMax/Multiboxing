@@ -8,6 +8,7 @@ internal static class NativeMethods
     public const int GA_ROOT = 2;
     public const int WH_KEYBOARD_LL = 13;
     public const int WH_MOUSE_LL = 14;
+    public const int WM_NULL = 0x0000;
     public const int WM_KEYDOWN = 0x0100;
     public const int WM_KEYUP = 0x0101;
     public const int WM_SYSKEYDOWN = 0x0104;
@@ -23,9 +24,7 @@ internal static class NativeMethods
     public const int WM_XBUTTONDOWN = 0x020B;
     public const int WM_XBUTTONUP = 0x020C;
     public const int XBUTTON1 = 1;
-    public const int XBUTTON2 = 2;
     public const uint GW_HWNDNEXT = 2;
-    public const int SW_RESTORE = 9;
 
     public delegate IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam);
 
@@ -80,9 +79,6 @@ internal static class NativeMethods
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int maxCount);
 
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    public static extern int GetClassName(IntPtr hwnd, StringBuilder className, int maxCount);
-
     [DllImport("user32.dll", SetLastError = true)]
     public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
 
@@ -94,15 +90,6 @@ internal static class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();
-
-    [DllImport("user32.dll")]
-    public static extern bool ShowWindow(IntPtr hwnd, int command);
-
-    [DllImport("user32.dll")]
-    public static extern bool SetForegroundWindow(IntPtr hwnd);
-
-    [DllImport("user32.dll")]
-    public static extern bool BringWindowToTop(IntPtr hwnd);
 
     [DllImport("user32.dll")]
     public static extern bool IsChild(IntPtr parent, IntPtr child);

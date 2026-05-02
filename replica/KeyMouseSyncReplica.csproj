@@ -12,9 +12,4 @@
     <SupportedOSPlatformVersion>7.0</SupportedOSPlatformVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
-
-  <ItemGroup>
-    <Content Include="..\配置.ini" Link="配置.ini" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\dm*.dll" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
 </Project>
