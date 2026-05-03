@@ -61,7 +61,7 @@ public sealed class MainForm : Form
         };
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 78));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 230));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 380));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         Controls.Add(root);
 
@@ -122,7 +122,7 @@ public sealed class MainForm : Form
             RowCount = 1
         };
         operationGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
-        operationGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 260));
+        operationGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 340));
         operationGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         operationGroup.Controls.Add(operationGrid);
 
@@ -157,6 +157,7 @@ public sealed class MainForm : Form
         };
         pickerPanel.Controls.Add(crossLabel, 0, 1);
 
+        _pickerHintLabel.AutoSize = false;
         _pickerHintLabel.Dock = DockStyle.Fill;
         _pickerHintLabel.Text = "拖到目标窗口后松开，即可加入列表。";
         _pickerHintLabel.TextAlign = ContentAlignment.TopCenter;
@@ -173,78 +174,97 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 5,
+            RowCount = 4,
             Padding = new Padding(10)
         };
         commandPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         commandPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        commandPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        commandPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        commandPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        commandPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        commandPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        commandPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+        commandPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+        commandPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+        commandPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
         commandGroup.Controls.Add(commandPanel);
 
-        var addButton = new Button { Dock = DockStyle.Fill, Text = "添加鼠标" };
+        static void ConfigureCommandControl(Control control)
+        {
+            control.Dock = DockStyle.Fill;
+            control.Margin = new Padding(4);
+            control.MinimumSize = new Size(96, 38);
+            if (control is ButtonBase buttonBase)
+            {
+                buttonBase.TextAlign = ContentAlignment.MiddleCenter;
+            }
+        }
+
+        var addButton = new Button { Text = "添加窗口" };
+        ConfigureCommandControl(addButton);
         addButton.Click += (_, _) => AddWindowFromCursor(setAsMain: false);
         commandPanel.Controls.Add(addButton, 0, 0);
 
-        var setMainButton = new Button { Dock = DockStyle.Fill, Text = "设置为主窗口" };
-        setMainButton.Click += (_, _) => SetSelectedOrCursorWindowAsMain();
-        commandPanel.Controls.Add(setMainButton, 1, 0);
-
-        var deleteButton = new Button { Dock = DockStyle.Fill, Text = "删除" };
+        var deleteButton = new Button { Text = "删除" };
+        ConfigureCommandControl(deleteButton);
         deleteButton.Click += (_, _) => DeleteSelectedWindow();
-        commandPanel.Controls.Add(deleteButton, 0, 1);
+        commandPanel.Controls.Add(deleteButton, 1, 0);
 
-        _toggleSyncButton.Dock = DockStyle.Fill;
+        var setMainButton = new Button { Text = "设为主窗口" };
+        ConfigureCommandControl(setMainButton);
+        setMainButton.Click += (_, _) => SetSelectedOrCursorWindowAsMain();
+        commandPanel.SetColumnSpan(setMainButton, 2);
+        commandPanel.Controls.Add(setMainButton, 0, 1);
+
         _toggleSyncButton.Text = "开启同步";
+        ConfigureCommandControl(_toggleSyncButton);
         _toggleSyncButton.Click += (_, _) => ToggleSync();
-        commandPanel.Controls.Add(_toggleSyncButton, 1, 1);
+        commandPanel.Controls.Add(_toggleSyncButton, 0, 2);
 
-        _keyboardCheckBox.Text = "同步键盘操作";
-        _keyboardCheckBox.Dock = DockStyle.Fill;
-        _keyboardCheckBox.Checked = true;
-        commandPanel.Controls.Add(_keyboardCheckBox, 0, 2);
-
-        _mouseCheckBox.Text = "同步鼠标操作";
-        _mouseCheckBox.Dock = DockStyle.Fill;
-        _mouseCheckBox.Checked = true;
-        commandPanel.Controls.Add(_mouseCheckBox, 1, 2);
-
-        _testMessageButton.Dock = DockStyle.Fill;
-        _testMessageButton.Text = "测试消息同步";
+        _testMessageButton.Text = "测试同步";
+        ConfigureCommandControl(_testMessageButton);
         _testMessageButton.Click += (_, _) => TestSelectedWindowMessage();
-        commandPanel.SetColumnSpan(_testMessageButton, 2);
-        commandPanel.Controls.Add(_testMessageButton, 0, 3);
+        commandPanel.Controls.Add(_testMessageButton, 1, 2);
 
-        var shortcutHint = new Label
-        {
-            Dock = DockStyle.Fill,
-            Text = "提示：鼠标侧键1（后退键/XButton1）可快捷开启或关闭同步；鼠标侧键2（前进键/XButton2）可添加当前光标所在窗口。",
-            TextAlign = ContentAlignment.TopLeft
-        };
-        commandPanel.SetColumnSpan(shortcutHint, 2);
-        commandPanel.Controls.Add(shortcutHint, 0, 4);
+        _keyboardCheckBox.Text = "键盘同步";
+        ConfigureCommandControl(_keyboardCheckBox);
+        _keyboardCheckBox.Checked = true;
+        commandPanel.Controls.Add(_keyboardCheckBox, 0, 3);
+
+        _mouseCheckBox.Text = "鼠标同步";
+        ConfigureCommandControl(_mouseCheckBox);
+        _mouseCheckBox.Checked = true;
+        commandPanel.Controls.Add(_mouseCheckBox, 1, 3);
 
         var messageGroup = new GroupBox
         {
             Dock = DockStyle.Fill,
-            Text = "Windows 消息同步"
+            Text = "程序操作指南"
         };
         operationGrid.Controls.Add(messageGroup, 2, 0);
 
-        var messageHint = new Label
+        var guideHost = new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(12),
-            Text = "当前版本只使用 Windows 消息同步：程序捕获主操作窗口上的键鼠事件，" +
-                "再通过 PostMessage 转发到目标窗口。\r\n\r\n" +
-                "“测试消息同步”会向目标窗口发送 WM_NULL 探针，只检查消息队列是否接受投递；" +
-                "真实键鼠效果仍取决于目标程序是否处理对应的键盘和鼠标消息。",
-            TextAlign = ContentAlignment.TopLeft
+            Padding = new Padding(12)
         };
-        messageGroup.Controls.Add(messageHint);
+        var guideText =
+            "1. 按住左侧十字拖到要同步的窗口，松开后加入列表；也可以把鼠标移到目标窗口上，再点「添加窗口」。\r\n\r\n" +
+            "2. 在列表中选择你实际要操作输入的那一个窗口，点「设为主窗口」。\r\n\r\n" +
+            "3. 勾选「键盘同步」「鼠标同步」等需要的内容；可先点「测试同步」确认目标窗口是否可用。\r\n\r\n" +
+            "4. 点「开启同步」后，在主操作窗口里正常打字、点击即可同步到列表中的其它窗口。\r\n\r\n" +
+            "提示：鼠标侧键1（后退键/XButton1）可快捷开启或关闭同步；侧键2（前进键/XButton2）可添加光标所在窗口。";
+        var guideBox = new TextBox
+        {
+            BorderStyle = BorderStyle.None,
+            Dock = DockStyle.Fill,
+            Margin = Padding.Empty,
+            Multiline = true,
+            ReadOnly = true,
+            ScrollBars = ScrollBars.Vertical,
+            TabStop = false,
+            BackColor = guideHost.BackColor,
+            ForeColor = SystemColors.ControlText,
+            Text = guideText
+        };
+        guideHost.Controls.Add(guideBox);
+        messageGroup.Controls.Add(guideHost);
 
         _mainWindowLabel.Dock = DockStyle.Fill;
         _mainWindowLabel.TextAlign = ContentAlignment.MiddleLeft;
