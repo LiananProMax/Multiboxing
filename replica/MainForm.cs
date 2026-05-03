@@ -93,6 +93,17 @@ public sealed class MainForm : Form
         _windowList.Columns.Add("消息状态", 110);
         _windowList.Columns.Add("同步状态", 120);
         _windowList.Columns.Add("当前模式", 300);
+
+        var windowListMenu = new ContextMenuStrip();
+        var setMainMenuItem = new ToolStripMenuItem("设置为主窗口");
+        setMainMenuItem.Click += (_, _) => SetSelectedWindowAsMain();
+        var deleteMenuItem = new ToolStripMenuItem("删除");
+        deleteMenuItem.Click += (_, _) => DeleteSelectedWindow();
+        windowListMenu.Items.AddRange([setMainMenuItem, deleteMenuItem]);
+        windowListMenu.Opening += (_, args) => args.Cancel = GetSelectedWindow() == null;
+        _windowList.ContextMenuStrip = windowListMenu;
+        _windowList.MouseDown += HandleWindowListMouseDown;
+
         listGroup.Controls.Add(_windowList);
         root.Controls.Add(listGroup, 0, 1);
 
@@ -325,6 +336,19 @@ public sealed class MainForm : Form
         AddWindowFromCursor(setAsMain: true);
     }
 
+    private void SetSelectedWindowAsMain()
+    {
+        var selected = GetSelectedWindow();
+        if (selected == null)
+        {
+            ShowWarning("请先选择要设置为主窗口的窗口。");
+            return;
+        }
+
+        SetMainWindow(selected);
+        RefreshWindowList();
+    }
+
     private void SetMainWindow(WindowInfo window)
     {
         foreach (var item in _windows)
@@ -495,6 +519,25 @@ public sealed class MainForm : Form
         }
 
         AddWindowFromCursor(setAsMain: false, notifyResult: true);
+    }
+
+    private void HandleWindowListMouseDown(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Right)
+        {
+            return;
+        }
+
+        var item = _windowList.GetItemAt(e.X, e.Y);
+        _windowList.SelectedItems.Clear();
+        if (item == null)
+        {
+            return;
+        }
+
+        item.Selected = true;
+        item.Focused = true;
+        _windowList.Focus();
     }
 
     private WindowInfo? GetSelectedWindow()
