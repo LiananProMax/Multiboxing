@@ -6,6 +6,10 @@ internal static class Program
     private static void Main()
     {
         ApplicationConfiguration.Initialize();
-        Application.Run(new MainForm());
+
+        using var notifications = new NotificationService();
+        notifications.InitializeSystemNotifications();
+
+        Application.Run(new MainForm(notifications));
     }
 }

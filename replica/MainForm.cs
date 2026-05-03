@@ -1,10 +1,10 @@
 using System.ComponentModel;
-using System.Text;
 
 namespace KeyMouseSyncReplica;
 
 public sealed class MainForm : Form
 {
+    private readonly NotificationService _notifications;
     private readonly SyncManager _syncManager = new();
     private readonly MouseSideButtonToggleHook _sideButtonToggleHook = new();
     private readonly BindingList<WindowInfo> _windows = new();
@@ -18,8 +18,11 @@ public sealed class MainForm : Form
     private readonly TargetPickerControl _targetPicker = new();
     private WindowInfo? _mainWindow;
 
-    public MainForm()
+    internal MainForm(NotificationService notifications)
     {
+        _notifications = notifications;
+        _notifications.SetActivationForm(this);
+
         Text = "多窗口键鼠同步器 - Windows Message";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(1080, 720);
@@ -238,10 +241,10 @@ public sealed class MainForm : Form
         root.Controls.Add(_mainWindowLabel, 0, 3);
     }
 
-    private void AddWindowFromCursor(bool setAsMain)
+    private void AddWindowFromCursor(bool setAsMain, bool notifyResult = false)
     {
         var picked = WindowPicker.PickWindowUnderCursor(Handle, out var error);
-        AddPickedWindow(picked, error, setAsMain);
+        AddPickedWindow(picked, error, setAsMain, notifyResult);
     }
 
     private void AddWindowFromPoint(Point screenPoint, bool setAsMain)
@@ -250,11 +253,19 @@ public sealed class MainForm : Form
         AddPickedWindow(picked, error, setAsMain);
     }
 
-    private void AddPickedWindow(WindowInfo? picked, string error, bool setAsMain)
+    private void AddPickedWindow(WindowInfo? picked, string error, bool setAsMain, bool notifyResult = false)
     {
         if (picked == null)
         {
-            ShowWarning(error);
+            if (notifyResult)
+            {
+                _notifications.ShowSystemNotificationOrWarning(this, "添加窗口失败", error);
+            }
+            else
+            {
+                ShowWarning(error);
+            }
+
             return;
         }
 
@@ -265,10 +276,21 @@ public sealed class MainForm : Form
             {
                 SetMainWindow(existing);
                 RefreshWindowList();
+                if (notifyResult)
+                {
+                    _notifications.ShowSystemNotificationOrInformation(this, "主窗口已设置", $"{existing.DisplayTitle} 已设为主操作窗口。");
+                }
             }
             else
             {
-                ShowWarning("当前窗口已存在！");
+                if (notifyResult)
+                {
+                    _notifications.ShowSystemNotificationOrWarning(this, "窗口已存在", "当前窗口已存在于同步列表。");
+                }
+                else
+                {
+                    ShowWarning("当前窗口已存在！");
+                }
             }
 
             return;
@@ -281,6 +303,13 @@ public sealed class MainForm : Form
         }
 
         RefreshWindowList();
+        if (notifyResult && setAsMain)
+        {
+            _notifications.ShowSystemNotificationOrInformation(
+                this,
+                "主窗口已设置",
+                $"{picked.DisplayTitle} 已设为主操作窗口。");
+        }
     }
 
     private void SetSelectedOrCursorWindowAsMain()
@@ -333,7 +362,7 @@ public sealed class MainForm : Form
         RefreshWindowList();
     }
 
-    private void ToggleSync()
+    private void ToggleSync(bool notifyResult = false)
     {
         if (_syncManager.IsRunning)
         {
@@ -345,6 +374,11 @@ public sealed class MainForm : Form
 
             _toggleSyncButton.Text = "开启同步";
             RefreshWindowList();
+            if (notifyResult)
+            {
+                _notifications.ShowSystemNotificationOrInformation(this, "同步已关闭", "已通过鼠标侧键关闭键鼠同步。");
+            }
+
             return;
         }
 
@@ -355,13 +389,26 @@ public sealed class MainForm : Form
                 _mouseCheckBox.Checked,
                 out var error))
         {
-            ShowWarning(error);
+            if (notifyResult)
+            {
+                _notifications.ShowSystemNotificationOrWarning(this, "开启同步失败", error);
+            }
+            else
+            {
+                ShowWarning(error);
+            }
+
             RefreshWindowList();
             return;
         }
 
         _toggleSyncButton.Text = "关闭同步";
         RefreshWindowList();
+        if (notifyResult)
+        {
+            var targetCount = _windows.Count(window => _mainWindow == null || window.Handle != _mainWindow.Handle);
+            _notifications.ShowSystemNotificationOrInformation(this, "同步已开启", $"正在向 {targetCount} 个目标窗口同步输入。");
+        }
     }
 
     private void TestSelectedWindowMessage()
@@ -385,40 +432,7 @@ public sealed class MainForm : Form
             return;
         }
 
-        MessageBox.Show(
-            this,
-            FormatMessageFallbackTestReport(report),
-            "消息同步测试结果",
-            MessageBoxButtons.OK,
-            report.CanPostMessage ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
-    }
-
-    private static string FormatMessageFallbackTestReport(MessageFallbackTestReport report)
-    {
-        var builder = new StringBuilder();
-        builder.AppendLine($"主窗口：0x{report.MainWindowHandle.ToInt64():X}  {FormatTitle(report.MainWindowTitle)}");
-        builder.AppendLine($"目标窗口：0x{report.TargetWindowHandle.ToInt64():X}  {FormatTitle(report.TargetWindowTitle)}");
-        builder.AppendLine();
-        builder.AppendLine($"消息投递探针（WM_NULL）：{(report.CanPostMessage ? "可用" : "失败")}");
-        if (!report.CanPostMessage)
-        {
-            builder.AppendLine($"Win32 错误码：{report.LastWin32Error}");
-        }
-
-        builder.AppendLine();
-        builder.AppendLine("正式同步路径：");
-        builder.AppendLine($"- 键盘消息：{(report.SyncKeyboard ? "启用，将转发 WM_KEY*/WM_SYSKEY*" : "未启用")}");
-        builder.AppendLine($"- 鼠标消息：{(report.SyncMouse ? "启用，将转发 WM_MOUSE*" : "未启用")}");
-        builder.AppendLine();
-        builder.AppendLine(report.CanPostMessage
-            ? "目标窗口接受 Windows 消息投递。真实键鼠效果仍取决于目标程序是否处理这些消息。"
-            : "目标窗口当前无法接受 PostMessage 投递，正式同步可能无效。");
-        return builder.ToString();
-    }
-
-    private static string FormatTitle(string title)
-    {
-        return string.IsNullOrWhiteSpace(title) ? "(无标题窗口)" : title;
+        _notifications.ShowMessageTestReport(this, report);
     }
 
     private void HandleSideButtonToggleRequested(object? sender, EventArgs e)
@@ -470,7 +484,7 @@ public sealed class MainForm : Form
             return;
         }
 
-        ToggleSync();
+        ToggleSync(notifyResult: true);
     }
 
     private void AddWindowFromSideButton()
@@ -480,7 +494,7 @@ public sealed class MainForm : Form
             return;
         }
 
-        AddWindowFromCursor(setAsMain: false);
+        AddWindowFromCursor(setAsMain: false, notifyResult: true);
     }
 
     private WindowInfo? GetSelectedWindow()
@@ -523,6 +537,6 @@ public sealed class MainForm : Form
 
     private void ShowWarning(string message)
     {
-        MessageBox.Show(this, message, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        _notifications.ShowWarning(this, message);
     }
 }
