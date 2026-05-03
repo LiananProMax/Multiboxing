@@ -16,6 +16,7 @@ public sealed class MouseSideButtonToggleHook : IDisposable
     }
 
     public event EventHandler? ToggleRequested;
+    public event EventHandler? AddWindowRequested;
 
     public bool IsRunning => _mouseHook != IntPtr.Zero;
 
@@ -65,11 +66,19 @@ public sealed class MouseSideButtonToggleHook : IDisposable
             if (message is NativeMethods.WM_XBUTTONDOWN or NativeMethods.WM_XBUTTONUP)
             {
                 var data = Marshal.PtrToStructure<NativeMethods.MSLLHOOKSTRUCT>(lParam);
-                if (NativeMethods.GetXButton(data.MouseData) == NativeMethods.XBUTTON1)
+                var xButton = NativeMethods.GetXButton(data.MouseData);
+                if (xButton is NativeMethods.XBUTTON1 or NativeMethods.XBUTTON2)
                 {
                     if (message == NativeMethods.WM_XBUTTONDOWN)
                     {
-                        ToggleRequested?.Invoke(this, EventArgs.Empty);
+                        if (xButton == NativeMethods.XBUTTON1)
+                        {
+                            ToggleRequested?.Invoke(this, EventArgs.Empty);
+                        }
+                        else
+                        {
+                            AddWindowRequested?.Invoke(this, EventArgs.Empty);
+                        }
                     }
 
                     return ConsumeMessage;

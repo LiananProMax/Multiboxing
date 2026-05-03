@@ -27,6 +27,7 @@ public sealed class MainForm : Form
 
         BuildUi();
         _sideButtonToggleHook.ToggleRequested += HandleSideButtonToggleRequested;
+        _sideButtonToggleHook.AddWindowRequested += HandleSideButtonAddWindowRequested;
     }
 
     protected override void OnShown(EventArgs e)
@@ -206,7 +207,7 @@ public sealed class MainForm : Form
         var shortcutHint = new Label
         {
             Dock = DockStyle.Fill,
-            Text = "提示：鼠标侧键1（后退键/XButton1）可快捷开启或关闭同步。",
+            Text = "提示：鼠标侧键1（后退键/XButton1）可快捷开启或关闭同步；鼠标侧键2（前进键/XButton2）可添加当前光标所在窗口。",
             TextAlign = ContentAlignment.TopLeft
         };
         commandPanel.SetColumnSpan(shortcutHint, 2);
@@ -441,6 +442,27 @@ public sealed class MainForm : Form
         }
     }
 
+    private void HandleSideButtonAddWindowRequested(object? sender, EventArgs e)
+    {
+        if (IsDisposed || Disposing)
+        {
+            return;
+        }
+
+        try
+        {
+            BeginInvoke((MethodInvoker)AddWindowFromSideButton);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Ignore late hook callbacks after the form has started closing.
+        }
+        catch (InvalidOperationException)
+        {
+            // The form handle can disappear during shutdown while the low-level hook is unwinding.
+        }
+    }
+
     private void ToggleSyncFromShortcut()
     {
         if (IsDisposed || Disposing)
@@ -449,6 +471,16 @@ public sealed class MainForm : Form
         }
 
         ToggleSync();
+    }
+
+    private void AddWindowFromSideButton()
+    {
+        if (IsDisposed || Disposing)
+        {
+            return;
+        }
+
+        AddWindowFromCursor(setAsMain: false);
     }
 
     private WindowInfo? GetSelectedWindow()

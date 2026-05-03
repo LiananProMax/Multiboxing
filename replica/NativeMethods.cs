@@ -24,6 +24,7 @@ internal static class NativeMethods
     public const int WM_XBUTTONDOWN = 0x020B;
     public const int WM_XBUTTONUP = 0x020C;
     public const int XBUTTON1 = 1;
+    public const int XBUTTON2 = 2;
     public const uint GW_HWNDNEXT = 2;
 
     public delegate IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam);

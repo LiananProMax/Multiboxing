@@ -94,7 +94,7 @@ public sealed class InputSynchronizer : IDisposable
                 or NativeMethods.WM_XBUTTONUP)
             {
                 var data = Marshal.PtrToStructure<NativeMethods.MSLLHOOKSTRUCT>(lParam);
-                if (IsSideButtonToggleMessage(message, data.MouseData))
+                if (IsShortcutSideButtonMessage(message, data.MouseData))
                 {
                     return NativeMethods.CallNextHookEx(_mouseHook, nCode, wParam, lParam);
                 }
@@ -124,10 +124,10 @@ public sealed class InputSynchronizer : IDisposable
         return root == _mainWindow || NativeMethods.IsChild(_mainWindow, foreground);
     }
 
-    private static bool IsSideButtonToggleMessage(int message, uint mouseData)
+    private static bool IsShortcutSideButtonMessage(int message, uint mouseData)
     {
         return message is NativeMethods.WM_XBUTTONDOWN or NativeMethods.WM_XBUTTONUP
-            && NativeMethods.GetXButton(mouseData) == NativeMethods.XBUTTON1;
+            && NativeMethods.GetXButton(mouseData) is NativeMethods.XBUTTON1 or NativeMethods.XBUTTON2;
     }
 
     private static bool PointInsideWindow(IntPtr hwnd, NativeMethods.POINT point)
