@@ -1,0 +1,21 @@
+<Application x:Class="KeyMouseSyncReplica.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:ThemesDictionary Theme="Light" />
+                <ui:ControlsDictionary />
+            </ResourceDictionary.MergedDictionaries>
+
+            <SolidColorBrush x:Key="AppBackgroundBrush" Color="#F5F7FB" />
+            <SolidColorBrush x:Key="CardBackgroundBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="CardBorderBrush" Color="#DDE3EA" />
+            <SolidColorBrush x:Key="MutedTextBrush" Color="#667085" />
+            <SolidColorBrush x:Key="AccentBrush" Color="#2563EB" />
+            <SolidColorBrush x:Key="SuccessBrush" Color="#16A34A" />
+            <SolidColorBrush x:Key="WarningBrush" Color="#D97706" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

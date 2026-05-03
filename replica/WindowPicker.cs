@@ -1,4 +1,5 @@
 using System.Text;
+using DrawingPoint = System.Drawing.Point;
 
 namespace KeyMouseSyncReplica;
 
@@ -14,10 +15,10 @@ public static class WindowPicker
             return null;
         }
 
-        return PickWindowAtPoint(ownerHandle, new Point(point.X, point.Y), out error);
+        return PickWindowAtPoint(ownerHandle, new DrawingPoint(point.X, point.Y), out error);
     }
 
-    public static WindowInfo? PickWindowAtPoint(IntPtr ownerHandle, Point screenPoint, out string error)
+    public static WindowInfo? PickWindowAtPoint(IntPtr ownerHandle, DrawingPoint screenPoint, out string error)
     {
         error = string.Empty;
 

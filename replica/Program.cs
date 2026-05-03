@@ -5,11 +5,12 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
-        ApplicationConfiguration.Initialize();
+        System.Windows.Forms.Application.EnableVisualStyles();
+        System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
 
-        using var notifications = new NotificationService();
-        notifications.InitializeSystemNotifications();
+        var app = new App();
+        app.InitializeComponent();
 
-        Application.Run(new MainForm(notifications));
+        app.Run();
     }
 }
