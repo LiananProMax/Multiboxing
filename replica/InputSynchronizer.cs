@@ -99,7 +99,7 @@ public sealed class InputSynchronizer : IDisposable
                     return NativeMethods.CallNextHookEx(_mouseHook, nCode, wParam, lParam);
                 }
 
-                if (PointInsideWindow(_mainWindow, data.Pt))
+                if (IsPointOnMainWindow(data.Pt))
                 {
                     foreach (var target in _targets)
                     {
@@ -138,6 +138,22 @@ public sealed class InputSynchronizer : IDisposable
         }
 
         return point.X >= rect.Left && point.X <= rect.Right && point.Y >= rect.Top && point.Y <= rect.Bottom;
+    }
+
+    private bool IsPointOnMainWindow(NativeMethods.POINT point)
+    {
+        if (!PointInsideWindow(_mainWindow, point))
+        {
+            return false;
+        }
+
+        var hitWindow = NativeMethods.WindowFromPoint(point);
+        if (hitWindow == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        return hitWindow == _mainWindow || NativeMethods.IsChild(_mainWindow, hitWindow);
     }
 
     private void PostMouseMessage(IntPtr target, int message, NativeMethods.MSLLHOOKSTRUCT data)
