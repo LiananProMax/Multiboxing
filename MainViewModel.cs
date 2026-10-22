@@ -19,6 +19,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private WindowInfo? _selectedWindow;
     private bool _syncKeyboard = true;
     private bool _syncMouse = true;
+    private bool _enableDiagnostics;
     private bool _disposed;
 
     public MainViewModel(NotificationService notifications, Window owner, Func<IntPtr> getOwnerHandle)
@@ -85,6 +86,21 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
             _syncMouse = value;
             OnPropertyChanged(nameof(SyncMouse));
+        }
+    }
+
+    public bool EnableDiagnostics
+    {
+        get => _enableDiagnostics;
+        set
+        {
+            if (_enableDiagnostics == value)
+            {
+                return;
+            }
+
+            _enableDiagnostics = value;
+            OnPropertyChanged(nameof(EnableDiagnostics));
         }
     }
 
@@ -265,6 +281,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 _notifications.ShowSystemNotificationOrInformation(_owner, "同步已关闭", "已通过鼠标侧键关闭键鼠同步。");
             }
 
+            ShowDiagnosticReportIfAny();
             return;
         }
 
@@ -273,7 +290,8 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 _mainWindow,
                 SyncKeyboard,
                 SyncMouse,
-                out var error))
+                out var error,
+                enableDiagnostics: EnableDiagnostics))
         {
             if (notifyResult)
             {
@@ -293,6 +311,31 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             _notifications.ShowSystemNotificationOrInformation(_owner, "同步已开启", $"正在向 {TargetCount} 个目标窗口同步输入。");
         }
+    }
+
+    private void ShowDiagnosticReportIfAny()
+    {
+        if (!EnableDiagnostics)
+        {
+            return;
+        }
+
+        var report = _syncManager.LastDiagnosticReport;
+        if (report == null)
+        {
+            return;
+        }
+
+        try
+        {
+            System.Windows.Clipboard.SetText(report.Summary);
+        }
+        catch
+        {
+            // 剪贴板可能被其他程序占用,失败不影响弹窗展示。
+        }
+
+        _notifications.ShowInformation(_owner, "同步诊断摘要(已复制到剪贴板)", report.Summary);
     }
 
     private void TestSelectedWindowMessage()

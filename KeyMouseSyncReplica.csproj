@@ -17,6 +17,8 @@
     <TieredPGO>false</TieredPGO>
     <PublishReadyToRun Condition="'$(Configuration)' == 'Release'">true</PublishReadyToRun>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- ops-web 是独立的 Node 子项目，不要让 SDK 默认通配把它扫进本项目 -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);ops-web\**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="WPF-UI" Version="4.2.1" />

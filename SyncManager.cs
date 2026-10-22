@@ -8,12 +8,15 @@ public sealed class SyncManager : IDisposable
 
     public bool IsRunning { get; private set; }
 
+    public SyncDiagnosticReport? LastDiagnosticReport => _inputSynchronizer.LastDiagnosticReport;
+
     public bool Start(
         IReadOnlyList<WindowInfo> windows,
         WindowInfo? mainWindow,
         bool syncKeyboard,
         bool syncMouse,
-        out string error)
+        out string error,
+        bool enableDiagnostics = false)
     {
         error = string.Empty;
 
@@ -43,7 +46,7 @@ public sealed class SyncManager : IDisposable
                 window.LastError = string.Empty;
             }
 
-            _inputSynchronizer.Start(mainWindow!.Handle, targets.Select(target => target.Handle), syncKeyboard, syncMouse);
+            _inputSynchronizer.Start(mainWindow!.Handle, targets.Select(target => target.Handle), syncKeyboard, syncMouse, enableDiagnostics);
             IsRunning = true;
             error = string.Empty;
             return true;

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Threading.Channels;
 
 namespace KeyMouseSyncReplica;
@@ -40,6 +41,9 @@ public sealed class InputSynchronizer : IDisposable
     private long _lastMovePostedAt;
     private int _lastPostedX = int.MinValue;
     private int _lastPostedY = int.MinValue;
+    private SyncDiagnostics? _diagnostics;
+
+    public SyncDiagnosticReport? LastDiagnosticReport { get; private set; }
 
     public InputSynchronizer()
     {
@@ -49,7 +53,7 @@ public sealed class InputSynchronizer : IDisposable
 
     public bool IsRunning => Volatile.Read(ref _state) == 1;
 
-    public void Start(IntPtr mainWindow, IEnumerable<IntPtr> targetWindows, bool syncKeyboard, bool syncMouse)
+    public void Start(IntPtr mainWindow, IEnumerable<IntPtr> targetWindows, bool syncKeyboard, bool syncMouse, bool enableDiagnostics = false)
     {
         lock (_gate)
         {
@@ -77,6 +81,21 @@ public sealed class InputSynchronizer : IDisposable
             _lastMovePostedAt = 0;
             _lastPostedX = int.MinValue;
             _lastPostedY = int.MinValue;
+            LastDiagnosticReport = null;
+            _diagnostics = enableDiagnostics ? new SyncDiagnostics() : null;
+            if (_diagnostics != null)
+            {
+                _diagnostics.Log($"SESSION START syncKeyboard={syncKeyboard} syncMouse={syncMouse}");
+                _diagnostics.Log(
+                    $"process: pid={Environment.ProcessId} elevated={IsElevated()} " +
+                    $"dpiAwareness={SyncDiagnostics.FormatAwareness(NativeMethods.GetThreadDpiAwarenessContext())}");
+                _diagnostics.Log(SyncDiagnostics.DescribeWindow("main", _mainWindow));
+                for (var i = 0; i < _targets.Length; i++)
+                {
+                    _diagnostics.Log(SyncDiagnostics.DescribeWindow($"target[{i}]", _targets[i]));
+                }
+            }
+
             _events = Channel.CreateUnbounded<InputEvent>(new UnboundedChannelOptions
             {
                 SingleReader = true,
@@ -153,6 +172,26 @@ public sealed class InputSynchronizer : IDisposable
         _signal = null;
         _events = null;
         signal?.Dispose();
+
+        if (_diagnostics != null)
+        {
+            _diagnostics.Log("SESSION STOP");
+            LastDiagnosticReport = _diagnostics.FinalizeReport();
+            _diagnostics = null;
+        }
+    }
+
+    private static bool IsElevated()
+    {
+        try
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private int InstallHooks()
@@ -351,8 +390,23 @@ public sealed class InputSynchronizer : IDisposable
 
             ConsumeMoveThrough(inputEvent.Sequence);
 
-            if (!IsPointOnMainWindow(inputEvent.X, inputEvent.Y))
+            var diag = _diagnostics;
+            diag?.Bump(SyncDiagnostics.KeyDiscreteSeen);
+            var hitResult = ClassifyPointOnMainWindow(inputEvent.X, inputEvent.Y, out var hit);
+            if (hitResult != MainHitResult.OnMain)
             {
+                if (diag != null)
+                {
+                    diag.Bump(hitResult == MainHitResult.OutsideRect
+                        ? SyncDiagnostics.KeyDiscreteDropOutside
+                        : SyncDiagnostics.KeyDiscreteDropHit);
+                    diag.Log(
+                        $"DROP {SyncDiagnostics.MessageName(inputEvent.Message)} seq={inputEvent.Sequence} " +
+                        $"pt=({inputEvent.X},{inputEvent.Y}) reason={hitResult} " +
+                        $"mainRect={(_mainRectOk ? SyncDiagnostics.FormatRect(_mainRect) : "(无)")} " +
+                        $"{SyncDiagnostics.DescribeHitWindow(hit)}");
+                }
+
                 continue;
             }
 
@@ -360,7 +414,10 @@ public sealed class InputSynchronizer : IDisposable
             _lastPostedX = inputEvent.X;
             _lastPostedY = inputEvent.Y;
             _lastMovePostedAt = Environment.TickCount64;
-            PostMouseToTargets(inputEvent.Message, inputEvent.X, inputEvent.Y, inputEvent.MouseData);
+            if (PostMouseToTargets(inputEvent.Message, inputEvent.X, inputEvent.Y, inputEvent.MouseData) > 0)
+            {
+                diag?.Bump(SyncDiagnostics.KeyDiscretePosted);
+            }
         }
     }
 
@@ -436,14 +493,42 @@ public sealed class InputSynchronizer : IDisposable
             return;
         }
 
-        if (!IsPointOnMainWindow(x, y) || (x == _lastPostedX && y == _lastPostedY))
+        var diag = _diagnostics;
+        diag?.Bump(SyncDiagnostics.KeyMoveSeen);
+        var hitResult = ClassifyPointOnMainWindow(x, y, out var hit);
+        if (hitResult != MainHitResult.OnMain)
         {
+            if (diag != null)
+            {
+                diag.Bump(hitResult == MainHitResult.OutsideRect
+                    ? SyncDiagnostics.KeyMoveDropOutside
+                    : SyncDiagnostics.KeyMoveDropHit);
+                if (diag.ShouldSampleMove())
+                {
+                    diag.Log(
+                        $"DROP WM_MOUSEMOVE pt=({x},{y}) reason={hitResult} " +
+                        $"mainRect={(_mainRectOk ? SyncDiagnostics.FormatRect(_mainRect) : "(无)")} " +
+                        $"{SyncDiagnostics.DescribeHitWindow(hit)}");
+                }
+            }
+
             _publishedMoveVersion = version;
             _lastMovePostedAt = now;
             return;
         }
 
-        PostMouseToTargets(NativeMethods.WM_MOUSEMOVE, x, y, 0);
+        if (x == _lastPostedX && y == _lastPostedY)
+        {
+            diag?.Bump(SyncDiagnostics.KeyMoveDropDuplicate);
+            _publishedMoveVersion = version;
+            _lastMovePostedAt = now;
+            return;
+        }
+
+        if (PostMouseToTargets(NativeMethods.WM_MOUSEMOVE, x, y, 0) > 0)
+        {
+            diag?.Bump(SyncDiagnostics.KeyMovePosted);
+        }
         _lastPostedX = x;
         _lastPostedY = y;
         _lastMovePostedAt = now;
@@ -455,13 +540,25 @@ public sealed class InputSynchronizer : IDisposable
 
     private void PublishKey(InputEvent inputEvent)
     {
+        var diag = _diagnostics;
+        diag?.Bump(SyncDiagnostics.KeyKeySeen);
         if (!IsMainWindowActive())
         {
+            if (diag != null)
+            {
+                diag.Bump(SyncDiagnostics.KeyKeyDropInactive);
+                if (diag.ShouldSampleMove())
+                {
+                    diag.Log($"DROP KEY {SyncDiagnostics.MessageName(inputEvent.Message)} vk=0x{inputEvent.VkCode:X} reason=mainNotActive");
+                }
+            }
+
             return;
         }
 
         var key = new IntPtr(inputEvent.VkCode);
         var packed = BuildKeyboardLParam(inputEvent);
+        var postedAny = false;
         for (var i = 0; i < _targets.Length; i++)
         {
             if (!_targetRectOk[i])
@@ -469,7 +566,21 @@ public sealed class InputSynchronizer : IDisposable
                 continue;
             }
 
-            NativeMethods.PostMessage(_targets[i], inputEvent.Message, key, packed);
+            var ok = NativeMethods.PostMessage(_targets[i], inputEvent.Message, key, packed);
+            if (ok)
+            {
+                postedAny = true;
+            }
+            else
+            {
+                diag?.Bump(SyncDiagnostics.KeyPostFailed);
+                diag?.Log($"POST FAIL KEY {SyncDiagnostics.MessageName(inputEvent.Message)} -> target=0x{_targets[i].ToInt64():X} err={Marshal.GetLastWin32Error()}");
+            }
+        }
+
+        if (postedAny)
+        {
+            diag?.Bump(SyncDiagnostics.KeyKeyPosted);
         }
     }
 
@@ -503,20 +614,30 @@ public sealed class InputSynchronizer : IDisposable
         return root == _mainWindow || NativeMethods.IsChild(_mainWindow, foreground);
     }
 
-    private bool IsPointOnMainWindow(int x, int y)
+    private enum MainHitResult
     {
+        OnMain,
+        OutsideRect,
+        HitNotMain
+    }
+
+    private MainHitResult ClassifyPointOnMainWindow(int x, int y, out IntPtr hit)
+    {
+        hit = IntPtr.Zero;
         if (!_mainRectOk || x < _mainRect.Left || x > _mainRect.Right || y < _mainRect.Top || y > _mainRect.Bottom)
         {
-            return false;
+            return MainHitResult.OutsideRect;
         }
 
-        var hit = NativeMethods.WindowFromPoint(new NativeMethods.POINT { X = x, Y = y });
+        hit = NativeMethods.WindowFromPoint(new NativeMethods.POINT { X = x, Y = y });
         if (hit == IntPtr.Zero)
         {
-            return false;
+            return MainHitResult.HitNotMain;
         }
 
-        return hit == _mainWindow || NativeMethods.IsChild(_mainWindow, hit);
+        return hit == _mainWindow || NativeMethods.IsChild(_mainWindow, hit)
+            ? MainHitResult.OnMain
+            : MainHitResult.HitNotMain;
     }
 
     private static bool IsTrackedMouseMessage(int message)
@@ -533,11 +654,11 @@ public sealed class InputSynchronizer : IDisposable
             && NativeMethods.GetXButton(mouseData) is NativeMethods.XBUTTON1 or NativeMethods.XBUTTON2;
     }
 
-    private void PostMouseToTargets(int message, int x, int y, uint mouseData)
+    private int PostMouseToTargets(int message, int x, int y, uint mouseData)
     {
         if (!_mainRectOk)
         {
-            return;
+            return 0;
         }
 
         var source = new NativeMethods.POINT { X = x, Y = y };
@@ -545,15 +666,66 @@ public sealed class InputSynchronizer : IDisposable
             ? new IntPtr(unchecked((int)(mouseData & 0xffff0000)))
             : IntPtr.Zero;
 
+        var diag = _diagnostics;
+        var isMove = message == NativeMethods.WM_MOUSEMOVE;
+        var posted = 0;
         for (var i = 0; i < _targets.Length; i++)
         {
-            if (!_targetRectOk[i] || !TryMapToClient(_targets[i], source, _mainRect, _targetRects[i], out var client))
+            if (!_targetRectOk[i] || !TryMapToClient(_targets[i], source, _mainRect, _targetRects[i], out var client, out var mappedScreen))
             {
                 continue;
             }
 
-            NativeMethods.PostMessage(_targets[i], message, wParam, MakeLParam(client.X, client.Y));
+            var ok = NativeMethods.PostMessage(_targets[i], message, wParam, MakeLParam(client.X, client.Y));
+            var error = ok ? 0 : Marshal.GetLastWin32Error();
+            if (ok)
+            {
+                posted++;
+            }
+
+            if (diag != null)
+            {
+                if (!ok)
+                {
+                    diag.Bump(SyncDiagnostics.KeyPostFailed);
+                }
+
+                var cursorInTargetRect = SyncDiagnostics.Contains(_targetRects[i], x, y);
+                var hasClientScreen = SyncDiagnostics.TryGetClientRectScreen(_targets[i], out var clientScreen);
+                var cursorInClient = hasClientScreen && SyncDiagnostics.Contains(clientScreen, x, y);
+                var hasClientLocal = NativeMethods.GetClientRect(_targets[i], out var clientLocal);
+                var mappedInClient = hasClientLocal && SyncDiagnostics.Contains(clientLocal, client.X, client.Y);
+
+                if (!cursorInTargetRect)
+                {
+                    diag.Bump(SyncDiagnostics.KeyPostCursorOutsideTarget);
+                }
+
+                if (!cursorInClient)
+                {
+                    diag.Bump(SyncDiagnostics.KeyPostCursorOutsideClient);
+                }
+
+                if (!mappedInClient)
+                {
+                    diag.Bump(SyncDiagnostics.KeyPostMappedOutsideClient);
+                }
+
+                if (!isMove || diag.ShouldSampleMove())
+                {
+                    diag.Log(
+                        $"POST {SyncDiagnostics.MessageName(message)} -> target[{i}]=0x{_targets[i].ToInt64():X} " +
+                        $"pt=({x},{y}) mainRect={SyncDiagnostics.FormatRect(_mainRect)} " +
+                        $"targetRect={SyncDiagnostics.FormatRect(_targetRects[i])} " +
+                        $"clientRectScreen={(hasClientScreen ? SyncDiagnostics.FormatRect(clientScreen) : "(无)")} " +
+                        $"mappedScreen=({mappedScreen.X},{mappedScreen.Y}) mappedClient=({client.X},{client.Y}) " +
+                        $"cursorInTargetRect={cursorInTargetRect} cursorInClient={cursorInClient} mappedInClient={mappedInClient} " +
+                        $"post={(ok ? "ok" : $"fail err={error}")}");
+                }
+            }
         }
+
+        return posted;
     }
 
     private static bool TryMapToClient(
@@ -561,7 +733,8 @@ public sealed class InputSynchronizer : IDisposable
         NativeMethods.POINT source,
         NativeMethods.RECT mainRect,
         NativeMethods.RECT targetRect,
-        out NativeMethods.POINT client)
+        out NativeMethods.POINT client,
+        out NativeMethods.POINT mappedScreen)
     {
         var mainWidth = Math.Max(1, mainRect.Right - mainRect.Left);
         var mainHeight = Math.Max(1, mainRect.Bottom - mainRect.Top);
@@ -569,11 +742,12 @@ public sealed class InputSynchronizer : IDisposable
         var targetHeight = Math.Max(1, targetRect.Bottom - targetRect.Top);
         var ratioX = (source.X - mainRect.Left) / (double)mainWidth;
         var ratioY = (source.Y - mainRect.Top) / (double)mainHeight;
-        client = new NativeMethods.POINT
+        mappedScreen = new NativeMethods.POINT
         {
             X = targetRect.Left + (int)Math.Round(targetWidth * ratioX),
             Y = targetRect.Top + (int)Math.Round(targetHeight * ratioY)
         };
+        client = mappedScreen;
         return NativeMethods.ScreenToClient(target, ref client);
     }
 

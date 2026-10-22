@@ -5,3 +5,7 @@ publish/
 *.user
 *.suo
 *.tmp
+
+ops-web/node_modules/
+ops-web/dist/
+ops-web/artifacts/

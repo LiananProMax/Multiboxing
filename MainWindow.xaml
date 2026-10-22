@@ -277,6 +277,8 @@
                     <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                         <CheckBox Content="键盘同步" IsChecked="{Binding SyncKeyboard, Mode=TwoWay}" />
                         <CheckBox Margin="14,0,0,0" Content="鼠标同步" IsChecked="{Binding SyncMouse, Mode=TwoWay}" />
+                        <CheckBox Margin="14,0,0,0" Content="诊断日志" IsChecked="{Binding EnableDiagnostics, Mode=TwoWay}"
+                                  ToolTip="开启后记录同步丢弃/投递明细,关闭同步时弹出摘要" />
                     </StackPanel>
                 </StackPanel>
             </Border>
