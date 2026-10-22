@@ -65,6 +65,18 @@ internal static class NativeMethods
         public IntPtr ExtraInfo;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MSG
+    {
+        public IntPtr Hwnd;
+        public uint Message;
+        public IntPtr WParam;
+        public IntPtr LParam;
+        public uint Time;
+        public POINT Point;
+        public uint Private;
+    }
+
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool GetCursorPos(out POINT point);
 
@@ -122,8 +134,25 @@ internal static class NativeMethods
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern IntPtr GetModuleHandle(string? moduleName);
 
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool PostThreadMessage(uint threadId, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern int GetMessage(out MSG msg, IntPtr hwnd, uint filterMin, uint filterMax);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool PeekMessage(out MSG msg, IntPtr hwnd, uint filterMin, uint filterMax, uint removeMsg);
+
     public static int GetXButton(uint mouseData)
     {
         return (int)((mouseData >> 16) & 0xffff);
+    }
+
+    public static unsafe T ReadStruct<T>(IntPtr pointer) where T : unmanaged
+    {
+        return *(T*)pointer;
     }
 }

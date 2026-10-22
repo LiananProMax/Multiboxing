@@ -51,6 +51,11 @@ public sealed class SyncManager : IDisposable
         catch (Exception ex)
         {
             Stop();
+            foreach (var window in windows)
+            {
+                window.ResetRuntimeState();
+            }
+
             error = $"开启同步失败：{ex.Message}";
             return false;
         }

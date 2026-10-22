@@ -6,7 +6,7 @@ C# WinForms 多窗口键鼠同步器。当前版本只保留 Windows 消息同�
 
 构建输出位于：
 
-`replica\bin\x86\Release\net9.0-windows\win-x86\KeyMouseSyncReplica.exe`
+`bin\Release\net9.0-windows\win-x86\publish\KeyMouseSyncReplica.exe`
 
 程序已配置为启动时请求管理员权限。Windows 消息同步通常需要程序权限不低于目标窗口权限，否则钩子捕获或消息投递可能受系统限制。
 

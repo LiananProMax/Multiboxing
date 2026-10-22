@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
 using DrawingPoint = System.Drawing.Point;
@@ -15,10 +14,10 @@ internal sealed class TargetPickerButton : FrameworkElement
 
     public TargetPickerButton()
     {
-        Width = 96;
-        Height = 96;
-        MinWidth = 82;
-        MinHeight = 82;
+        Width = 48;
+        Height = 48;
+        MinWidth = 48;
+        MinHeight = 48;
         Cursor = WpfCursors.Hand;
         Focusable = false;
     }
@@ -71,39 +70,49 @@ internal sealed class TargetPickerButton : FrameworkElement
     {
         base.OnRender(drawingContext);
 
-        var bounds = new Rect(5, 5, Math.Max(0, ActualWidth - 10), Math.Max(0, ActualHeight - 10));
-        var background = _dragging ? new Media.SolidColorBrush(Media.Color.FromRgb(232, 241, 255)) : Media.Brushes.White;
-        var border = _dragging ? new Media.SolidColorBrush(Media.Color.FromRgb(37, 99, 235)) : new Media.SolidColorBrush(Media.Color.FromRgb(203, 213, 225));
+        var bounds = new Rect(2, 2, Math.Max(0, ActualWidth - 4), Math.Max(0, ActualHeight - 4));
 
-        drawingContext.DrawRoundedRectangle(background, new Media.Pen(border, 2), bounds, 18, 18);
+        // Liquid-glass tile: translucent white gradient fill with a bright rim.
+        var background = new Media.LinearGradientBrush(
+            _dragging
+                ? Media.Color.FromArgb(0x59, 0x7D, 0xD3, 0xFC)
+                : Media.Color.FromArgb(0x2E, 0xFF, 0xFF, 0xFF),
+            _dragging
+                ? Media.Color.FromArgb(0x26, 0x7D, 0xD3, 0xFC)
+                : Media.Color.FromArgb(0x0D, 0xFF, 0xFF, 0xFF),
+            new WpfPoint(0, 0),
+            new WpfPoint(0, 1));
+        var border = _dragging
+            ? new Media.SolidColorBrush(Media.Color.FromRgb(125, 211, 252))
+            : new Media.SolidColorBrush(Media.Color.FromArgb(0x80, 0xFF, 0xFF, 0xFF));
+
+        drawingContext.DrawRoundedRectangle(background, new Media.Pen(border, _dragging ? 2 : 1.5), bounds, 14, 14);
+
+        // Top sheen, like light running across the upper edge of the glass.
+        var sheen = new Rect(bounds.Left + 6, bounds.Top + 3, Math.Max(0, bounds.Width - 12), bounds.Height / 3);
+        var sheenBrush = new Media.LinearGradientBrush(
+            Media.Color.FromArgb(0x3D, 0xFF, 0xFF, 0xFF),
+            Media.Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF),
+            new WpfPoint(0, 0),
+            new WpfPoint(0, 1));
+        drawingContext.DrawRoundedRectangle(sheenBrush, null, sheen, 8, 8);
 
         var center = new WpfPoint(bounds.Left + bounds.Width / 2, bounds.Top + bounds.Height / 2);
         var radius = Math.Min(bounds.Width, bounds.Height) / 4;
-        var crossPen = new Media.Pen(new Media.SolidColorBrush(Media.Color.FromRgb(15, 23, 42)), 5)
+        var crossColor = _dragging
+            ? Media.Color.FromRgb(186, 230, 253)
+            : Media.Color.FromRgb(241, 245, 249);
+        var crossPen = new Media.Pen(new Media.SolidColorBrush(crossColor), 3.5)
         {
             StartLineCap = Media.PenLineCap.Round,
             EndLineCap = Media.PenLineCap.Round
         };
-        var thinPen = new Media.Pen(new Media.SolidColorBrush(Media.Color.FromRgb(100, 116, 139)), 2);
+        var thinPen = new Media.Pen(new Media.SolidColorBrush(Media.Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF)), 1.5);
 
         drawingContext.DrawEllipse(null, thinPen, center, radius, radius);
-        drawingContext.DrawLine(crossPen, new WpfPoint(center.X, bounds.Top + 15), new WpfPoint(center.X, bounds.Bottom - 15));
-        drawingContext.DrawLine(crossPen, new WpfPoint(bounds.Left + 15, center.Y), new WpfPoint(bounds.Right - 15, center.Y));
-        drawingContext.DrawEllipse(Media.Brushes.WhiteSmoke, thinPen, center, 8, 8);
-
-        if (_dragging)
-        {
-            var text = new Media.FormattedText(
-                "松开选择",
-                CultureInfo.CurrentUICulture,
-                System.Windows.FlowDirection.LeftToRight,
-                new Media.Typeface("Microsoft YaHei UI"),
-                12,
-                new Media.SolidColorBrush(Media.Color.FromRgb(37, 99, 235)),
-                Media.VisualTreeHelper.GetDpi(this).PixelsPerDip);
-
-            drawingContext.DrawText(text, new WpfPoint((ActualWidth - text.Width) / 2, ActualHeight - 24));
-        }
+        drawingContext.DrawLine(crossPen, new WpfPoint(center.X, bounds.Top + 8), new WpfPoint(center.X, bounds.Bottom - 8));
+        drawingContext.DrawLine(crossPen, new WpfPoint(bounds.Left + 8, center.Y), new WpfPoint(bounds.Right - 8, center.Y));
+        drawingContext.DrawEllipse(new Media.SolidColorBrush(Media.Color.FromArgb(0xE6, 0x0F, 0x17, 0x2A)), thinPen, center, 4, 4);
     }
 }
 

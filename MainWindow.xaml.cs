@@ -34,7 +34,24 @@ public partial class MainWindow : FluentWindow
 
     private void HandleSourceInitialized(object? sender, EventArgs e)
     {
+        ApplyBackdropFallbackIfNeeded();
         _viewModel.StartSideButtonHook();
+    }
+
+    private void ApplyBackdropFallbackIfNeeded()
+    {
+        if (WindowBackdrop.IsSupported(WindowBackdropType.Acrylic))
+        {
+            return;
+        }
+
+        // No system acrylic (older Windows / transparency unavailable):
+        // fall back to the opaque in-app gradient so text stays readable.
+        WindowBackdropType = WindowBackdropType.None;
+        if (TryFindResource("FallbackBackgroundBrush") is System.Windows.Media.Brush fallback)
+        {
+            Background = fallback;
+        }
     }
 
     private void TargetPicker_PickCompleted(object? sender, TargetPickedEventArgs e)
@@ -42,11 +59,11 @@ public partial class MainWindow : FluentWindow
         _viewModel.AddWindowFromPoint(e.ScreenPoint);
     }
 
-    private void WindowsDataGridRow_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    private void WindowsListBoxItem_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (sender is DataGridRow row && !row.IsSelected)
+        if (sender is ListBoxItem item && !item.IsSelected)
         {
-            row.IsSelected = true;
+            item.IsSelected = true;
         }
     }
 }

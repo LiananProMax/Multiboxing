@@ -1,9 +1,6 @@
-using System.Security.Principal;
 using System.Text;
 using System.Windows;
 using System.Windows.Interop;
-using Microsoft.Windows.AppNotifications;
-using Microsoft.Windows.AppNotifications.Builder;
 using DrawingSystemIcons = System.Drawing.SystemIcons;
 using WinForms = System.Windows.Forms;
 
@@ -14,8 +11,6 @@ internal sealed class NotificationService : IDisposable
     private const string AppTitle = "多窗口键鼠同步器";
 
     private readonly WinForms.NotifyIcon _fallbackNotifyIcon = new();
-    private bool _systemNotificationsAvailable;
-    private bool _systemNotificationsRegistered;
     private WinForms.Form? _activationForm;
     private Window? _activationWindow;
     private string _systemNotificationUnavailableReason = "系统通知尚未初始化。";
@@ -43,32 +38,7 @@ internal sealed class NotificationService : IDisposable
 
     public void InitializeSystemNotifications()
     {
-        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
-        {
-            _systemNotificationUnavailableReason = "当前 Windows 版本不支持应用通知。";
-            return;
-        }
-
-        if (IsProcessElevated())
-        {
-            _systemNotificationUnavailableReason = "Windows App SDK 不支持管理员权限进程发送系统通知。";
-            return;
-        }
-
-        try
-        {
-            AppNotificationManager.Default.NotificationInvoked += HandleNotificationInvoked;
-            AppNotificationManager.Default.Register();
-            _systemNotificationsRegistered = true;
-            _systemNotificationsAvailable = true;
-            _systemNotificationUnavailableReason = string.Empty;
-        }
-        catch (Exception ex)
-        {
-            _systemNotificationsAvailable = false;
-            _systemNotificationUnavailableReason = $"系统通知初始化失败：{ex.Message}";
-            TryDetachNotificationHandler();
-        }
+        _systemNotificationUnavailableReason = string.Empty;
     }
 
     public void ShowWarning(WinForms.IWin32Window owner, string message)
@@ -127,28 +97,7 @@ internal sealed class NotificationService : IDisposable
 
     public bool ShowSystemNotification(string title, string message)
     {
-        if (!_systemNotificationsAvailable)
-        {
-            return ShowFallbackBalloon(title, message);
-        }
-
-        try
-        {
-            var notification = new AppNotificationBuilder()
-                .AddArgument("action", "activate")
-                .AddText(title)
-                .AddText(message)
-                .BuildNotification();
-
-            AppNotificationManager.Default.Show(notification);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _systemNotificationsAvailable = false;
-            _systemNotificationUnavailableReason = $"系统通知发送失败：{ex.Message}";
-            return ShowFallbackBalloon(title, message);
-        }
+        return ShowFallbackBalloon(title, message);
     }
 
     public void ShowSystemNotificationOrInformation(WinForms.IWin32Window owner, string title, string message)
@@ -193,24 +142,6 @@ internal sealed class NotificationService : IDisposable
 
     public void Dispose()
     {
-        if (_systemNotificationsRegistered)
-        {
-            try
-            {
-                AppNotificationManager.Default.Unregister();
-            }
-            catch
-            {
-                // Notification cleanup should not block application shutdown.
-            }
-            finally
-            {
-                TryDetachNotificationHandler();
-                _systemNotificationsRegistered = false;
-                _systemNotificationsAvailable = false;
-            }
-        }
-
         _fallbackNotifyIcon.Visible = false;
         _fallbackNotifyIcon.Dispose();
     }
@@ -268,18 +199,6 @@ internal sealed class NotificationService : IDisposable
     private static string FormatTitle(string title)
     {
         return string.IsNullOrWhiteSpace(title) ? "(无标题窗口)" : title;
-    }
-
-    private static bool IsProcessElevated()
-    {
-        using var identity = WindowsIdentity.GetCurrent();
-        var principal = new WindowsPrincipal(identity);
-        return principal.IsInRole(WindowsBuiltInRole.Administrator);
-    }
-
-    private void HandleNotificationInvoked(AppNotificationManager sender, AppNotificationActivatedEventArgs args)
-    {
-        ActivateForm();
     }
 
     private void ActivateForm()
@@ -360,18 +279,6 @@ internal sealed class NotificationService : IDisposable
         {
             _systemNotificationUnavailableReason = $"系统托盘通知发送失败：{ex.Message}";
             return false;
-        }
-    }
-
-    private void TryDetachNotificationHandler()
-    {
-        try
-        {
-            AppNotificationManager.Default.NotificationInvoked -= HandleNotificationInvoked;
-        }
-        catch
-        {
-            // The notification manager may be unavailable if registration failed early.
         }
     }
 
