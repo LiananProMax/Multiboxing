@@ -8,7 +8,8 @@
     "dev:web": "vite",
     "dev:server": "tsx watch server/index.ts",
     "build": "tsc -b && vite build",
-    "start": "tsx server/index.ts",
+    "start": "npm run dev",
+    "start:prod": "tsx server/index.ts",
     "lint": "oxlint",
     "preview": "vite preview"
   },

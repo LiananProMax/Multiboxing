@@ -1,4 +1,4 @@
-namespace KeyMouseSyncReplica;
+namespace Multiboxing;
 
 internal sealed class HookThread : IDisposable
 {

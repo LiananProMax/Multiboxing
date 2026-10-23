@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace KeyMouseSyncReplica;
+namespace Multiboxing;
 
 public sealed class MouseSideButtonToggleHook : IDisposable
 {

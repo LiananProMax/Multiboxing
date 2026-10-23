@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NoWarn>$(NoWarn);WFO1000</NoWarn>
+    <StartupObject>Multiboxing.Program</StartupObject>
+    <PlatformTarget>x86</PlatformTarget>
+    <Platforms>x86</Platforms>
+    <RuntimeIdentifier>win-x86</RuntimeIdentifier>
+    <SelfContained Condition="'$(Configuration)' == 'Release'">true</SelfContained>
+    <SelfContained Condition="'$(Configuration)' != 'Release'">false</SelfContained>
+    <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
+    <TieredPGO>false</TieredPGO>
+    <PublishReadyToRun Condition="'$(Configuration)' == 'Release'">true</PublishReadyToRun>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- ops-web 是独立的 Node 子项目，不要让 SDK 默认通配把它扫进本项目 -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);ops-web\**</DefaultItemExcludes>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WPF-UI" Version="4.2.1" />
+    <PackageReference Include="LightInject" Version="7.0.1" />
+    <PackageReference Include="MediatR" Version="9.0.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 移植代码按 EveOPreview.* 资源名查找 WinForms 资源，需保留原始 LogicalName -->
+    <EmbeddedResource Update="EveOPreview\View\Implementation\ThumbnailOverlay.resx">
+      <LogicalName>EveOPreview.View.ThumbnailOverlay.resources</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Update="EveOPreview\View\Implementation\ThumbnailView.resx">
+      <LogicalName>EveOPreview.View.ThumbnailView.resources</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Update="EveOPreview\View\Implementation\LiveThumbnailView.resx">
+      <LogicalName>EveOPreview.View.LiveThumbnailView.resources</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Update="EveOPreview\View\Implementation\StaticThumbnailView.resx">
+      <LogicalName>EveOPreview.View.StaticThumbnailView.resources</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Update="EveOPreview\View\Implementation\StaticThumbnailImage.resx">
+      <LogicalName>EveOPreview.View.StaticThumbnailImage.resources</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+</Project>

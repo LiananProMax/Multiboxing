@@ -1,6 +1,6 @@
 using System.Windows.Input;
 
-namespace KeyMouseSyncReplica;
+namespace Multiboxing;
 
 internal sealed class RelayCommand : ICommand
 {

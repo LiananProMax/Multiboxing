@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Threading.Channels;
 
-namespace KeyMouseSyncReplica;
+namespace Multiboxing;
 
 public sealed class InputSynchronizer : IDisposable
 {

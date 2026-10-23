@@ -3,11 +3,12 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
+using EveOPreview.Services;
 using DrawingPoint = System.Drawing.Point;
 
-namespace KeyMouseSyncReplica;
+namespace Multiboxing;
 
-internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable
+internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable, ISyncTargetRegistry
 {
     private readonly NotificationService _notifications;
     private readonly Window _owner;
@@ -166,7 +167,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             if (notifyResult)
             {
-                _notifications.ShowSystemNotificationOrWarning(_owner, "添加窗口失败", error);
+                _notifications.ShowToast(ToastKind.Error, "添加窗口失败", error);
             }
             else
             {
@@ -184,12 +185,12 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 SetMainWindow(existing);
                 if (notifyResult)
                 {
-                    _notifications.ShowSystemNotificationOrInformation(_owner, "主窗口已设置", $"{existing.DisplayTitle} 已设为主操作窗口。");
+                    _notifications.ShowToast(ToastKind.Info, "主窗口已设置", $"{existing.DisplayTitle} 已设为主操作窗口。");
                 }
             }
             else if (notifyResult)
             {
-                _notifications.ShowSystemNotificationOrWarning(_owner, "窗口已存在", "当前窗口已存在于同步列表。");
+                _notifications.ShowToast(ToastKind.Warning, "窗口已存在", "当前窗口已存在于同步列表。");
             }
             else
             {
@@ -209,8 +210,8 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         RefreshSummary();
         if (notifyResult && setAsMain)
         {
-            _notifications.ShowSystemNotificationOrInformation(
-                _owner,
+            _notifications.ShowToast(
+                ToastKind.Info,
                 "主窗口已设置",
                 $"{picked.DisplayTitle} 已设为主操作窗口。");
         }
@@ -255,15 +256,128 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             return;
         }
 
-        Windows.Remove(selected);
-        if (_mainWindow?.Handle == selected.Handle)
+        RemoveWindow(selected);
+        RefreshSummary();
+    }
+
+    private void RemoveWindow(WindowInfo window)
+    {
+        Windows.Remove(window);
+        if (_mainWindow?.Handle == window.Handle)
         {
             _mainWindow = null;
         }
 
-        SelectedWindow = Windows.FirstOrDefault();
+        if (SelectedWindow?.Handle == window.Handle)
+        {
+            SelectedWindow = Windows.FirstOrDefault();
+        }
+    }
+
+    #region ISyncTargetRegistry（缩略图 Ctrl+点击）
+
+    public bool IsSyncTarget(IntPtr clientHandle)
+    {
+        return clientHandle != IntPtr.Zero
+            && Windows.Any(window => IsSameClient(window, clientHandle));
+    }
+
+    public bool IsMainSyncTarget(IntPtr clientHandle)
+    {
+        return clientHandle != IntPtr.Zero
+            && _mainWindow != null
+            && IsSameClient(_mainWindow, clientHandle);
+    }
+
+    public void Toggle(IntPtr clientHandle, string title)
+    {
+        // 同步运行中目标集合已在 Start 时固定，改列表不会生效，直接拦截避免误导
+        if (_syncManager.IsRunning)
+        {
+            _notifications.ShowToast(ToastKind.Warning, "同步运行中", "请先关闭同步，再修改同步列表。");
+            return;
+        }
+
+        var existing = Windows.Where(window => IsSameClient(window, clientHandle)).ToArray();
+        if (existing.Length > 0)
+        {
+            foreach (var window in existing)
+            {
+                RemoveWindow(window);
+            }
+
+            RefreshSummary();
+            return;
+        }
+
+        // clientHandle 是游戏窗口句柄（缩略图的 Id），不要按鼠标位置取窗口
+        var picked = WindowPicker.FromHandle(clientHandle, title, out var error);
+        if (picked == null)
+        {
+            _notifications.ShowToast(ToastKind.Error, "加入同步列表失败", error);
+            return;
+        }
+
+        Windows.Add(picked);
+        SelectedWindow = picked;
         RefreshSummary();
     }
+
+    public void SetMain(IntPtr clientHandle, string title)
+    {
+        // 同步运行中主窗口/目标集合已在 Start 时固定，切换不会生效，直接拦截避免误导
+        if (_syncManager.IsRunning)
+        {
+            _notifications.ShowToast(ToastKind.Warning, "同步运行中", "请先关闭同步，再修改主窗口。");
+            return;
+        }
+
+        if (clientHandle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var existing = Windows.FirstOrDefault(window => IsSameClient(window, clientHandle));
+        if (existing != null)
+        {
+            if (_mainWindow != null && IsSameClient(_mainWindow, clientHandle))
+            {
+                return;
+            }
+
+            SetMainWindow(existing);
+            return;
+        }
+
+        // clientHandle 是游戏窗口句柄（缩略图的 Id），不要按鼠标位置取窗口
+        var picked = WindowPicker.FromHandle(clientHandle, title, out var error);
+        if (picked == null)
+        {
+            _notifications.ShowToast(ToastKind.Error, "设置主窗口失败", error);
+            return;
+        }
+
+        Windows.Add(picked);
+        SetMainWindow(picked);
+    }
+
+    private static bool IsSameClient(WindowInfo window, IntPtr clientHandle)
+    {
+        if (window.Handle == clientHandle)
+        {
+            return true;
+        }
+
+        if (window.Handle == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        // 兼容之前用十字拖拽/光标位置添加、取到子窗口句柄的条目
+        return NativeMethods.GetAncestor(window.Handle, (uint)NativeMethods.GA_ROOT) == clientHandle;
+    }
+
+    #endregion
 
     private void ToggleSync(bool notifyResult = false)
     {
@@ -278,7 +392,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             RefreshSummary();
             if (notifyResult)
             {
-                _notifications.ShowSystemNotificationOrInformation(_owner, "同步已关闭", "已通过鼠标侧键关闭键鼠同步。");
+                _notifications.ShowToast(ToastKind.Info, "同步已关闭", "已通过鼠标侧键关闭键鼠同步。");
             }
 
             ShowDiagnosticReportIfAny();
@@ -295,7 +409,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             if (notifyResult)
             {
-                _notifications.ShowSystemNotificationOrWarning(_owner, "开启同步失败", error);
+                _notifications.ShowToast(ToastKind.Error, "开启同步失败", error);
             }
             else
             {
@@ -309,7 +423,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         RefreshSummary();
         if (notifyResult)
         {
-            _notifications.ShowSystemNotificationOrInformation(_owner, "同步已开启", $"正在向 {TargetCount} 个目标窗口同步输入。");
+            _notifications.ShowToast(ToastKind.Success, "同步已开启", $"正在向 {TargetCount} 个目标窗口同步输入。");
         }
     }
 

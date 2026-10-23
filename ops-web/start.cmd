@@ -38,5 +38,5 @@ if not exist "dist\index.html" (
 if "%PORT%"=="" set PORT=4170
 echo 正在启动运维构建网站：http://127.0.0.1:%PORT%
 start "" "http://127.0.0.1:%PORT%"
-call npm start
+call npm run start:prod
 pause

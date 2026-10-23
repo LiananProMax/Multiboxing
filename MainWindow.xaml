@@ -1,304 +1,65 @@
-<ui:FluentWindow x:Class="KeyMouseSyncReplica.MainWindow"
+<ui:FluentWindow x:Class="Multiboxing.MainWindow"
                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                 xmlns:local="clr-namespace:KeyMouseSyncReplica"
+                 xmlns:views="clr-namespace:Multiboxing.Views"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  Title="多窗口键鼠同步器"
-                 Width="360"
-                 Height="640"
-                 MinWidth="340"
-                 MinHeight="560"
+                 Width="410"
+                 Height="680"
+                 MinWidth="380"
+                 MinHeight="580"
                  WindowStartupLocation="CenterScreen"
                  WindowBackdropType="Acrylic"
                  ExtendsContentIntoTitleBar="True"
                  Background="Transparent"
                  FontFamily="Segoe UI Variable Text, Microsoft YaHei UI"
                  Foreground="{StaticResource TextBrush}">
-    <ui:FluentWindow.Resources>
-        <!-- Sync status dot: grey when idle, green when running -->
-        <Style x:Key="StatusDotStyle" TargetType="Ellipse">
-            <Setter Property="Width" Value="7" />
-            <Setter Property="Height" Value="7" />
-            <Setter Property="Fill" Value="#94A3B8" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsSyncRunning}" Value="True">
-                    <Setter Property="Fill" Value="{StaticResource SuccessBrush}" />
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-
-        <Style x:Key="StatusPillStyle" TargetType="Border" BasedOn="{StaticResource PillStyle}">
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsSyncRunning}" Value="True">
-                    <Setter Property="Background" Value="#2E4ADE80" />
-                    <Setter Property="BorderBrush" Value="#664ADE80" />
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-
-        <!-- Per-window state pill in the list: accent when this row is the main window -->
-        <Style x:Key="ItemPillStyle" TargetType="Border" BasedOn="{StaticResource PillStyle}">
-            <Setter Property="Padding" Value="6,2" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsMain}" Value="True">
-                    <Setter Property="Background" Value="#337DD3FC" />
-                    <Setter Property="BorderBrush" Value="#8C7DD3FC" />
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-
-        <Style x:Key="WindowItemStyle" TargetType="ListBoxItem" BasedOn="{StaticResource GlassListBoxItemStyle}">
-            <EventSetter Event="PreviewMouseRightButtonDown"
-                         Handler="WindowsListBoxItem_PreviewMouseRightButtonDown" />
-            <Setter Property="Tag"
-                    Value="{Binding DataContext, RelativeSource={RelativeSource AncestorType=ListBox}}" />
-            <Setter Property="ContextMenu">
-                <Setter.Value>
-                    <ContextMenu>
-                        <MenuItem Header="设为主窗口"
-                                  Command="{Binding PlacementTarget.Tag.SetMainWindowCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
-                        <MenuItem Header="测试同步"
-                                  Command="{Binding PlacementTarget.Tag.TestMessageCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
-                        <Separator />
-                        <MenuItem Header="删除窗口"
-                                  Command="{Binding PlacementTarget.Tag.DeleteWindowCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
-                    </ContextMenu>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="EmptyListHintStyle" TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}">
-            <Setter Property="Visibility" Value="Collapsed" />
-            <Setter Property="HorizontalAlignment" Value="Center" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="TextAlignment" Value="Center" />
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding WindowCount}" Value="0">
-                    <Setter Property="Visibility" Value="Visible" />
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-    </ui:FluentWindow.Resources>
-
     <Grid>
-        <!-- Ambient colour glows behind the glass (also the visible backdrop on fallback) -->
         <Grid IsHitTestVisible="False">
             <Rectangle Fill="#4D0F172A" />
-            <Ellipse Width="240" Height="240" HorizontalAlignment="Left" VerticalAlignment="Top"
-                     Margin="-90,-80,0,0" Opacity="0.5">
+            <Ellipse Width="240" Height="240" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-90,-80,0,0" Opacity="0.5">
                 <Ellipse.Fill>
                     <RadialGradientBrush>
                         <GradientStop Color="#5938BDF8" Offset="0" />
                         <GradientStop Color="#0038BDF8" Offset="1" />
                     </RadialGradientBrush>
                 </Ellipse.Fill>
-                <Ellipse.Effect>
-                    <BlurEffect Radius="48" />
-                </Ellipse.Effect>
+                <Ellipse.Effect><BlurEffect Radius="48" /></Ellipse.Effect>
             </Ellipse>
-            <Ellipse Width="220" Height="220" HorizontalAlignment="Right" VerticalAlignment="Top"
-                     Margin="0,60,-100,0" Opacity="0.45">
+            <Ellipse Width="220" Height="220" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,60,-100,0" Opacity="0.45">
                 <Ellipse.Fill>
                     <RadialGradientBrush>
                         <GradientStop Color="#598187FC" Offset="0" />
                         <GradientStop Color="#008187FC" Offset="1" />
                     </RadialGradientBrush>
                 </Ellipse.Fill>
-                <Ellipse.Effect>
-                    <BlurEffect Radius="48" />
-                </Ellipse.Effect>
+                <Ellipse.Effect><BlurEffect Radius="48" /></Ellipse.Effect>
             </Ellipse>
-            <Ellipse Width="260" Height="260" HorizontalAlignment="Center" VerticalAlignment="Bottom"
-                     Margin="0,0,0,-130" Opacity="0.35">
+            <Ellipse Width="260" Height="260" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,-130" Opacity="0.35">
                 <Ellipse.Fill>
                     <RadialGradientBrush>
                         <GradientStop Color="#4DF472B6" Offset="0" />
                         <GradientStop Color="#00F472B6" Offset="1" />
                     </RadialGradientBrush>
                 </Ellipse.Fill>
-                <Ellipse.Effect>
-                    <BlurEffect Radius="52" />
-                </Ellipse.Effect>
+                <Ellipse.Effect><BlurEffect Radius="52" /></Ellipse.Effect>
             </Ellipse>
         </Grid>
 
         <Grid Margin="10,0,10,10">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
-
-            <ui:TitleBar Grid.Row="0"
-                         Title="多窗口键鼠同步器"
-                         ShowMaximize="False"
-                         CanMaximize="False"
-                         FontSize="11" />
-
-            <!-- Status -->
-            <Border Grid.Row="1" Margin="0,2,0,6" Style="{StaticResource GlassCardStyle}">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Windows 消息键鼠同步"
-                                   FontSize="13" FontWeight="SemiBold"
-                                   Foreground="{StaticResource TextBrush}" />
-                        <TextBlock Margin="0,2,0,0"
-                                   Style="{StaticResource MutedTextStyle}"
-                                   TextTrimming="CharacterEllipsis"
-                                   Text="{Binding MainWindowSummary}" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center">
-                        <Border Style="{StaticResource StatusPillStyle}" HorizontalAlignment="Right">
-                            <StackPanel Orientation="Horizontal">
-                                <Ellipse Style="{StaticResource StatusDotStyle}" />
-                                <TextBlock Margin="5,0,0,0" FontSize="10" FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextBrush}"
-                                           Text="{Binding SyncStatusText}" />
-                            </StackPanel>
-                        </Border>
-                        <TextBlock Margin="0,4,0,0" FontSize="10" HorizontalAlignment="Right"
-                                   Foreground="{StaticResource MutedTextBrush}">
-                            <Run Text="窗口 " /><Run Text="{Binding WindowCount, Mode=OneWay}" /><Run Text=" · 目标 " /><Run Text="{Binding TargetCount, Mode=OneWay}" />
-                        </TextBlock>
-                    </StackPanel>
-                </Grid>
-            </Border>
-
-            <!-- Window picker -->
-            <Border Grid.Row="2" Margin="0,0,0,6" Style="{StaticResource GlassCardStyle}">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <local:TargetPickerButton x:Name="TargetPicker"
-                                              Width="48" Height="48"
-                                              MinWidth="48" MinHeight="48"
-                                              PickCompleted="TargetPicker_PickCompleted" />
-                    <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="选择窗口" Style="{StaticResource SectionTitleStyle}" />
-                        <TextBlock Margin="0,2,0,0" Style="{StaticResource MutedTextStyle}"
-                                   Text="按住十字拖到目标窗口后松开,或把鼠标移到目标窗口后点“添加”" />
-                    </StackPanel>
-                </Grid>
-            </Border>
-
-            <!-- Window list -->
-            <Border Grid.Row="3" Margin="0,0,0,6" Style="{StaticResource GlassCardStyle}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <DockPanel Margin="0,0,0,6">
-                        <TextBlock DockPanel.Dock="Left" Text="同步窗口列表" Style="{StaticResource SectionTitleStyle}" />
-                        <TextBlock DockPanel.Dock="Right" Margin="8,0,0,0" FontSize="10"
-                                   VerticalAlignment="Center"
-                                   Foreground="{StaticResource MutedTextBrush}"
-                                   Text="右键单击进行操作" />
-                    </DockPanel>
-                    <Grid Grid.Row="1">
-                        <ListBox ItemsSource="{Binding Windows}"
-                                 SelectedItem="{Binding SelectedWindow, Mode=TwoWay}"
-                                 ItemContainerStyle="{StaticResource WindowItemStyle}"
-                                 Background="Transparent"
-                                 BorderThickness="0"
-                                 FontSize="11"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                 ScrollViewer.VerticalScrollBarVisibility="Auto">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock FontSize="11" FontWeight="SemiBold"
-                                                       Foreground="{StaticResource TextBrush}"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       Text="{Binding DisplayTitle}" />
-                                            <TextBlock Margin="0,1,0,0" FontSize="10"
-                                                       Foreground="{StaticResource MutedTextBrush}">
-                                                <Run Text="{Binding HandleHex, Mode=OneWay}" /><Run Text=" · PID " /><Run Text="{Binding ProcessId, Mode=OneWay}" />
-                                            </TextBlock>
-                                        </StackPanel>
-                                        <Border Grid.Column="1" Margin="8,0,0,0" Style="{StaticResource ItemPillStyle}">
-                                            <TextBlock FontSize="10" Foreground="{StaticResource TextBrush}"
-                                                       Text="{Binding SyncState}" />
-                                        </Border>
-                                    </Grid>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                        <TextBlock Style="{StaticResource EmptyListHintStyle}"
-                                   Text="暂无窗口&#x0a;拖动十字或点击“添加”加入窗口" />
-                    </Grid>
-                </Grid>
-            </Border>
-
-            <!-- Actions -->
-            <Border Grid.Row="4" Margin="0,0,0,6" Style="{StaticResource GlassCardStyle}">
-                <StackPanel>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" Margin="0,0,3,0" Content="添加"
-                                Command="{Binding AddWindowCommand}" />
-                        <Button Grid.Column="1" Margin="3,0,3,0" Content="设为主窗口"
-                                Command="{Binding SetMainWindowCommand}" />
-                        <Button Grid.Column="2" Margin="3,0,0,0" Content="删除"
-                                Command="{Binding DeleteWindowCommand}" />
-                    </Grid>
-                    <Grid Margin="0,6,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" Margin="0,0,3,0"
-                                Style="{StaticResource GlassPrimaryButtonStyle}"
-                                Content="{Binding ToggleSyncText}"
-                                Command="{Binding ToggleSyncCommand}" />
-                        <Button Grid.Column="1" Margin="3,0,0,0" Content="测试同步"
-                                Command="{Binding TestMessageCommand}" />
-                    </Grid>
-                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                        <CheckBox Content="键盘同步" IsChecked="{Binding SyncKeyboard, Mode=TwoWay}" />
-                        <CheckBox Margin="14,0,0,0" Content="鼠标同步" IsChecked="{Binding SyncMouse, Mode=TwoWay}" />
-                        <CheckBox Margin="14,0,0,0" Content="诊断日志" IsChecked="{Binding EnableDiagnostics, Mode=TwoWay}"
-                                  ToolTip="开启后记录同步丢弃/投递明细,关闭同步时弹出摘要" />
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
-            <!-- Guide (collapsed by default) -->
-            <Border Grid.Row="5" Style="{StaticResource GlassCardStyle}">
-                <Expander Header="操作指南">
-                    <StackPanel Margin="0,6,0,0">
-                        <TextBlock Style="{StaticResource MutedTextStyle}" Text="① 拖十字或移动鼠标后“添加”加入列表" />
-                        <TextBlock Margin="0,2,0,0" Style="{StaticResource MutedTextStyle}" Text="② 选中实际输入窗口 → “设为主窗口”" />
-                        <TextBlock Margin="0,2,0,0" Style="{StaticResource MutedTextStyle}" Text="③ 用“测试同步”确认目标可接收消息" />
-                        <TextBlock Margin="0,2,0,0" Style="{StaticResource MutedTextStyle}" Text="④ 开启同步后即可在主窗口正常输入" />
-                        <TextBlock Margin="0,5,0,0" FontSize="10" TextWrapping="Wrap"
-                                   Foreground="{StaticResource WarningBrush}"
-                                   Text="快捷键:XButton1 开关同步 · XButton2 加光标窗口" />
-                        <TextBlock Margin="0,3,0,0" Style="{StaticResource MutedTextStyle}"
-                                   Text="程序按管理员权限运行,使用 Windows 消息与低级钩子实现键鼠同步。" />
-                    </StackPanel>
-                </Expander>
-            </Border>
+            <ui:TitleBar Grid.Row="0" Title="多窗口键鼠同步器" ShowMaximize="False" CanMaximize="False" FontSize="11" />
+            <TabControl Grid.Row="1" Style="{StaticResource GlassTabControlStyle}">
+                <TabItem Header="键鼠同步">
+                    <views:SyncPage x:Name="SyncPageControl" />
+                </TabItem>
+                <TabItem Header="窗口预览">
+                    <views:PreviewPage x:Name="PreviewPageControl" />
+                </TabItem>
+            </TabControl>
         </Grid>
     </Grid>
 </ui:FluentWindow>

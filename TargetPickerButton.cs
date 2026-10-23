@@ -6,7 +6,7 @@ using WinFormsControl = System.Windows.Forms.Control;
 using WpfCursors = System.Windows.Input.Cursors;
 using WpfPoint = System.Windows.Point;
 
-namespace KeyMouseSyncReplica;
+namespace Multiboxing;
 
 internal sealed class TargetPickerButton : FrameworkElement
 {

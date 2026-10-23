@@ -1,4 +1,4 @@
-<Application x:Class="KeyMouseSyncReplica.App"
+<Application x:Class="Multiboxing.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
@@ -9,6 +9,17 @@
                 <ui:ControlsDictionary />
                 <ResourceDictionary Source="Themes/Glass.xaml" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- ComboBox：基于 WPF-UI 深色默认样式，仅统一字号/高度。
+                 必须放在此处（MergedDictionaries 之后）才能解析到 ControlsDictionary 中的 key；
+                 颜色、背景与弹出层由 WPF-UI Dark 主题提供，避免白底白字。 -->
+            <Style TargetType="ComboBox" BasedOn="{StaticResource DefaultComboBoxStyle}">
+                <Setter Property="FontSize" Value="11" />
+                <Setter Property="MinHeight" Value="26" />
+            </Style>
+            <Style TargetType="ComboBoxItem" BasedOn="{StaticResource DefaultComboBoxItemStyle}">
+                <Setter Property="FontSize" Value="11" />
+            </Style>
 
             <!-- Legacy keys kept for compatibility, now mapped to the dark glass palette -->
             <SolidColorBrush x:Key="AppBackgroundBrush" Color="#0B1226" />

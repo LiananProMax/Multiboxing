@@ -51,7 +51,7 @@ export default function App() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">运维构建</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            KeyMouseSyncReplica · .NET 9 WPF · win-x86 自包含发布
+            Multiboxing · .NET 9 WPF · win-x86 自包含发布
           </p>
         </div>
         <span

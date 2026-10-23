@@ -191,4 +191,102 @@
         <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
         <Setter Property="FontSize" Value="11" />
     </Style>
+
+    <!-- ===== Tabs (pill) ===== -->
+    <Style x:Key="GlassTabItemStyle" TargetType="TabItem">
+        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Padding" Value="12,5" />
+        <Setter Property="Margin" Value="0,0,4,0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabItem">
+                    <Border x:Name="Root" CornerRadius="999" Padding="{TemplateBinding Padding}"
+                            Background="#14FFFFFF" BorderBrush="#26FFFFFF" BorderThickness="1">
+                        <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource PrimaryFillBrush}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="#8C7DD3FC" />
+                            <Setter Property="Foreground" Value="White" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Opacity" Value="0.88" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="GlassTabControlStyle" TargetType="TabControl">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="ItemContainerStyle" Value="{StaticResource GlassTabItemStyle}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabControl">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <UniformGrid Grid.Row="0" Rows="1" Margin="0,0,0,6" IsItemsHost="True" />
+                        <ContentPresenter Grid.Row="1" ContentSource="SelectedContent" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 次级标签更小 -->
+    <Style x:Key="GlassSubTabItemStyle" TargetType="TabItem" BasedOn="{StaticResource GlassTabItemStyle}">
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="Padding" Value="9,4" />
+    </Style>
+    <Style x:Key="GlassSubTabControlStyle" TargetType="TabControl" BasedOn="{StaticResource GlassTabControlStyle}">
+        <Setter Property="ItemContainerStyle" Value="{StaticResource GlassSubTabItemStyle}" />
+    </Style>
+
+    <!-- ===== Inputs ===== -->
+    <Style x:Key="GlassTextBoxStyle" TargetType="TextBox">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        <Setter Property="Background" Value="#1AFFFFFF" />
+        <Setter Property="BorderBrush" Value="#33FFFFFF" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Padding" Value="6,3" />
+        <Setter Property="MinHeight" Value="26" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                        <ScrollViewer x:Name="PART_ContentHost" VerticalAlignment="Center" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="GlassNumericTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource GlassTextBoxStyle}">
+        <Setter Property="Width" Value="64" />
+        <Setter Property="TextAlignment" Value="Right" />
+    </Style>
+
+    <!-- ComboBox 隐式样式放在 App.xaml 中，需基于 WPF-UI 的 DefaultComboBoxStyle，
+         不能在此处用无模板的隐式样式整体替换，否则会退回系统浅色模板导致白底白字。 -->
+
+    <Style TargetType="Slider">
+        <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- 设置行标签 -->
+    <Style x:Key="SettingLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextStyle}">
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
 </ResourceDictionary>

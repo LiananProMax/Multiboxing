@@ -1,7 +1,7 @@
 using System.IO;
 using System.Text;
 
-namespace KeyMouseSyncReplica;
+namespace Multiboxing;
 
 /// <summary>
 /// 同步诊断记录:只在工作线程写入,停止同步时落盘。
@@ -129,7 +129,7 @@ internal sealed class SyncDiagnostics
                 {
                     var directory = Path.Combine(
                         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                        "KeyMouseSyncReplica");
+                        "Multiboxing");
                     Directory.CreateDirectory(directory);
                     _logPath = Path.Combine(directory, "sync-diagnostics.log");
 

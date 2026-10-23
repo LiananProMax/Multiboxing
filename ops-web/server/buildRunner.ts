@@ -26,7 +26,7 @@ const serverDir = path.dirname(fileURLToPath(import.meta.url))
 export const repoRoot = path.resolve(serverDir, '..', '..')
 export const opsWebRoot = path.resolve(serverDir, '..')
 export const artifactsDir = path.join(opsWebRoot, 'artifacts')
-const projectFile = path.join(repoRoot, 'KeyMouseSyncReplica.csproj')
+const projectFile = path.join(repoRoot, 'Multiboxing.csproj')
 /** 「直接构建到项目文件夹」模式的发布目录（已在 .gitignore 中忽略） */
 export const projectOutputDir = path.join(repoRoot, 'publish')
 const exeName = `${path.basename(projectFile, '.csproj')}.exe`
@@ -335,7 +335,7 @@ class BuildRunner extends EventEmitter<RunnerEvents> {
   /** zip 模式：发布到临时目录 → 打包 → 删除临时目录，只保留 zip */
   private async buildZip(id: string): Promise<void> {
     const publishDir = path.join(artifactsDir, id, 'publish')
-    const zipName = `KeyMouseSyncReplica-${id}-win-x86.zip`
+    const zipName = `Multiboxing-${id}-win-x86.zip`
     const zipPath = path.join(artifactsDir, zipName)
     try {
       await mkdir(publishDir, { recursive: true })
@@ -410,11 +410,38 @@ class BuildRunner extends EventEmitter<RunnerEvents> {
 
   /** 程序还在运行时 dotnet publish 无法覆盖 exe/dll，提前检测并给出明确提示 */
   private async ensureNotRunning(): Promise<void> {
+    // 先按进程名找：残留实例可能跑的是 bin\Debug 等其它目录的 exe，
+    // publish 目录的文件占用检测发现不了它，但它同样会和新实例各画一套缩略图。
+    // 提权进程在普通权限下读不到路径，但进程名与 PID 可以枚举。
+    const runningPids = await this.findRunningPids()
+    if (runningPids.length > 0) {
+      throw new Error(
+        `${exeName} 仍在运行（PID ${runningPids.join('、')}），可能主窗口已关闭但进程未退出（残留进程）。请在任务管理器中结束它，或从托盘菜单退出后再重新构建`,
+      )
+    }
+
     const locked = await findLockedFiles(projectOutputDir)
     if (locked.length > 0) {
       throw new Error(
         `${locked.join('、')} 正在被占用，通常是 ${exeName} 还在运行，无法覆盖。请先手动关闭程序，再重新构建`,
       )
+    }
+  }
+
+  private async findRunningPids(): Promise<number[]> {
+    try {
+      const stdout = await runPowerShell(
+        'Get-Process -Name $env:KMS_PROC -ErrorAction SilentlyContinue | ForEach-Object { $_.Id }',
+        { KMS_PROC: path.basename(exeName, '.exe') },
+        15_000,
+      )
+      return stdout
+        .split(/\r?\n/)
+        .map((line) => Number.parseInt(line.trim(), 10))
+        .filter((pid) => Number.isFinite(pid) && pid > 0)
+    } catch {
+      // 枚举失败（比如 PowerShell 不可用）时不阻断构建，退回文件占用检测
+      return []
     }
   }
 

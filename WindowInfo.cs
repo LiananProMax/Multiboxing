@@ -1,6 +1,6 @@
 using System.ComponentModel;
 
-namespace KeyMouseSyncReplica;
+namespace Multiboxing;
 
 public sealed class WindowInfo : INotifyPropertyChanged
 {

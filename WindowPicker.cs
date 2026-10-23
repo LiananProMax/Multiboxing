@@ -1,10 +1,21 @@
 using System.Text;
 using DrawingPoint = System.Drawing.Point;
 
-namespace KeyMouseSyncReplica;
+namespace Multiboxing;
 
 public static class WindowPicker
 {
+    /// <summary>需排除的窗口句柄（如浮层提示窗口），由 NotificationService 在创建提示窗口后设置。</summary>
+    public static IntPtr ExcludedWindowHandle { get; set; }
+
+    private static bool IsExcluded(IntPtr hwnd)
+    {
+        return ExcludedWindowHandle != IntPtr.Zero
+            && hwnd != IntPtr.Zero
+            && (hwnd == ExcludedWindowHandle
+                || NativeMethods.GetAncestor(hwnd, (uint)NativeMethods.GA_ROOT) == ExcludedWindowHandle);
+    }
+
     public static WindowInfo? PickWindowUnderCursor(IntPtr ownerHandle, out string error)
     {
         error = string.Empty;
@@ -38,7 +49,13 @@ public static class WindowPicker
 
         if (hwnd == ownerHandle || NativeMethods.IsChild(ownerHandle, hwnd))
         {
-            error = "不能选择复刻器自身窗口。";
+            error = "不能选择本程序自身窗口。";
+            return null;
+        }
+
+        if (IsExcluded(hwnd))
+        {
+            error = "不能选择提示窗口。";
             return null;
         }
 
@@ -48,6 +65,33 @@ public static class WindowPicker
         if (string.IsNullOrWhiteSpace(title) && root != IntPtr.Zero)
         {
             title = GetTitle(root);
+        }
+
+        return new WindowInfo(hwnd, unchecked((int)processId), title);
+    }
+
+    /// <summary>按已知窗口句柄构造 WindowInfo（供缩略图 Ctrl+点击使用，句柄来自游戏客户端本身）。</summary>
+    public static WindowInfo? FromHandle(IntPtr hwnd, string fallbackTitle, out string error)
+    {
+        error = string.Empty;
+
+        if (hwnd == IntPtr.Zero || !NativeMethods.IsWindow(hwnd))
+        {
+            error = "游戏窗口句柄无效。";
+            return null;
+        }
+
+        if (IsExcluded(hwnd))
+        {
+            error = "不能选择提示窗口。";
+            return null;
+        }
+
+        NativeMethods.GetWindowThreadProcessId(hwnd, out var processId);
+        var title = GetTitle(hwnd);
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            title = fallbackTitle;
         }
 
         return new WindowInfo(hwnd, unchecked((int)processId), title);

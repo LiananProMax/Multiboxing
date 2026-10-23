@@ -1,61 +1,93 @@
 using System.Text;
 using System.Windows;
 using System.Windows.Interop;
-using DrawingSystemIcons = System.Drawing.SystemIcons;
 using WinForms = System.Windows.Forms;
 
-namespace KeyMouseSyncReplica;
+namespace Multiboxing;
 
 internal sealed class NotificationService : IDisposable
 {
     private const string AppTitle = "多窗口键鼠同步器";
 
-    private readonly WinForms.NotifyIcon _fallbackNotifyIcon = new();
-    private WinForms.Form? _activationForm;
-    private Window? _activationWindow;
-    private string _systemNotificationUnavailableReason = "系统通知尚未初始化。";
+    private ToastWindow? _toast;
+    private bool _disposed;
 
-    public NotificationService()
+    /// <summary>在 UI 线程创建并预热浮层提示窗口，避免第一条提示延迟。</summary>
+    public void Initialize()
     {
-        _fallbackNotifyIcon.Icon = DrawingSystemIcons.Application;
-        _fallbackNotifyIcon.Text = AppTitle;
-        _fallbackNotifyIcon.Visible = false;
-        _fallbackNotifyIcon.BalloonTipClicked += (_, _) => ActivateForm();
-        _fallbackNotifyIcon.Click += (_, _) => ActivateForm();
+        if (_toast != null || _disposed)
+        {
+            return;
+        }
+
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher == null || dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
+        {
+            return;
+        }
+
+        if (!dispatcher.CheckAccess())
+        {
+            dispatcher.BeginInvoke(Initialize);
+            return;
+        }
+
+        _toast = new ToastWindow();
+        _toast.EnsureHandle();
+        WindowPicker.ExcludedWindowHandle = _toast.Handle;
     }
 
-    public void SetActivationForm(WinForms.Form form)
+    /// <summary>
+    /// 显示自定义浮层提示。新消息立即覆盖旧消息，不排队、不阻塞、不抢焦点。
+    /// 可从任意线程调用，内部切到 UI 线程。
+    /// </summary>
+    public void ShowToast(ToastKind kind, string title, string message)
     {
-        _activationForm = form;
-        _activationWindow = null;
-    }
+        if (_disposed)
+        {
+            return;
+        }
 
-    public void SetActivationWindow(Window window)
-    {
-        _activationWindow = window;
-        _activationForm = null;
-    }
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher == null || dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
+        {
+            return;
+        }
 
-    public void InitializeSystemNotifications()
-    {
-        _systemNotificationUnavailableReason = string.Empty;
+        try
+        {
+            dispatcher.BeginInvoke(() =>
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                Initialize();
+                _toast?.Present(kind, title, message);
+            });
+        }
+        catch (InvalidOperationException)
+        {
+            // Dispatcher 正在关闭
+        }
+        catch (TaskCanceledException)
+        {
+            // Dispatcher 关闭可能取消迟到的回调
+        }
     }
 
     public void ShowWarning(WinForms.IWin32Window owner, string message)
     {
-        ShowTaskDialog(
-            owner,
-            AppTitle,
-            "需要注意",
-            message,
-            WinForms.TaskDialogIcon.Warning,
-            WinForms.MessageBoxIcon.Warning);
+        ShowToast(ToastKind.Warning, "需要注意", message);
     }
 
     public void ShowWarning(Window owner, string message)
     {
-        ShowWarning(new WpfWindowOwner(owner), message);
+        ShowToast(ToastKind.Warning, "需要注意", message);
     }
+
+    // 以下长文本报告保留模态 TaskDialog（诊断摘要、消息测试报告）
 
     public void ShowInformation(WinForms.IWin32Window owner, string title, string message)
     {
@@ -95,55 +127,40 @@ internal sealed class NotificationService : IDisposable
         ShowMessageTestReport(new WpfWindowOwner(owner), report);
     }
 
-    public bool ShowSystemNotification(string title, string message)
-    {
-        return ShowFallbackBalloon(title, message);
-    }
-
-    public void ShowSystemNotificationOrInformation(WinForms.IWin32Window owner, string title, string message)
-    {
-        if (ShowSystemNotification(title, message))
-        {
-            return;
-        }
-
-        ShowInformation(owner, title, $"{message}\r\n\r\n{_systemNotificationUnavailableReason}");
-    }
-
-    public void ShowSystemNotificationOrInformation(Window owner, string title, string message)
-    {
-        if (ShowSystemNotification(title, message))
-        {
-            return;
-        }
-
-        ShowInformation(owner, title, $"{message}\r\n\r\n{_systemNotificationUnavailableReason}");
-    }
-
-    public void ShowSystemNotificationOrWarning(WinForms.IWin32Window owner, string title, string message)
-    {
-        if (ShowSystemNotification(title, message))
-        {
-            return;
-        }
-
-        ShowWarning(owner, $"{message}\r\n\r\n{_systemNotificationUnavailableReason}");
-    }
-
-    public void ShowSystemNotificationOrWarning(Window owner, string title, string message)
-    {
-        if (ShowSystemNotification(title, message))
-        {
-            return;
-        }
-
-        ShowWarning(owner, $"{message}\r\n\r\n{_systemNotificationUnavailableReason}");
-    }
-
     public void Dispose()
     {
-        _fallbackNotifyIcon.Visible = false;
-        _fallbackNotifyIcon.Dispose();
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        try
+        {
+            if (_toast != null)
+            {
+                if (_toast.Dispatcher.CheckAccess())
+                {
+                    _toast.Close();
+                }
+                else
+                {
+                    _toast.Dispatcher.BeginInvoke(() => _toast.Close());
+                }
+            }
+        }
+        catch
+        {
+            // 关闭阶段提示窗口可能已销毁
+        }
+        finally
+        {
+            _toast = null;
+            if (WindowPicker.ExcludedWindowHandle != IntPtr.Zero)
+            {
+                WindowPicker.ExcludedWindowHandle = IntPtr.Zero;
+            }
+        }
     }
 
     private static void ShowTaskDialog(
@@ -199,87 +216,6 @@ internal sealed class NotificationService : IDisposable
     private static string FormatTitle(string title)
     {
         return string.IsNullOrWhiteSpace(title) ? "(无标题窗口)" : title;
-    }
-
-    private void ActivateForm()
-    {
-        if (_activationWindow != null)
-        {
-            ActivateWindow(_activationWindow);
-            return;
-        }
-
-        var form = _activationForm;
-        if (form == null || form.IsDisposed || form.Disposing)
-        {
-            return;
-        }
-
-        try
-        {
-            form.BeginInvoke((WinForms.MethodInvoker)(() =>
-            {
-                if (form.WindowState == WinForms.FormWindowState.Minimized)
-                {
-                    form.WindowState = WinForms.FormWindowState.Normal;
-                }
-
-                form.Activate();
-            }));
-        }
-        catch (InvalidOperationException)
-        {
-            // The form handle may not be available during startup or shutdown.
-        }
-    }
-
-    private static void ActivateWindow(Window window)
-    {
-        if (window.Dispatcher.HasShutdownStarted || window.Dispatcher.HasShutdownFinished)
-        {
-            return;
-        }
-
-        try
-        {
-            window.Dispatcher.BeginInvoke(() =>
-            {
-                if (!window.IsVisible)
-                {
-                    window.Show();
-                }
-
-                if (window.WindowState == WindowState.Minimized)
-                {
-                    window.WindowState = WindowState.Normal;
-                }
-
-                window.Activate();
-            });
-        }
-        catch (InvalidOperationException)
-        {
-            // The WPF window may be closing while a notification callback arrives.
-        }
-        catch (TaskCanceledException)
-        {
-            // Dispatcher shutdown may cancel late notification activation.
-        }
-    }
-
-    private bool ShowFallbackBalloon(string title, string message)
-    {
-        try
-        {
-            _fallbackNotifyIcon.Visible = true;
-            _fallbackNotifyIcon.ShowBalloonTip(5000, title, message, WinForms.ToolTipIcon.Info);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _systemNotificationUnavailableReason = $"系统托盘通知发送失败：{ex.Message}";
-            return false;
-        }
     }
 
     private sealed class WpfWindowOwner : WinForms.IWin32Window
