@@ -651,7 +651,7 @@ public sealed class InputSynchronizer : IDisposable
     private static bool IsShortcutSideButtonMessage(int message, uint mouseData)
     {
         return message is NativeMethods.WM_XBUTTONDOWN or NativeMethods.WM_XBUTTONUP
-            && NativeMethods.GetXButton(mouseData) is NativeMethods.XBUTTON1 or NativeMethods.XBUTTON2;
+            && NativeMethods.GetXButton(mouseData) == NativeMethods.XBUTTON1;
     }
 
     private int PostMouseToTargets(int message, int x, int y, uint mouseData)

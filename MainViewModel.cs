@@ -37,7 +37,6 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable, ISync
         TestMessageCommand = new RelayCommand(TestSelectedWindowMessage, () => SelectedWindow != null);
 
         _sideButtonToggleHook.ToggleRequested += HandleSideButtonToggleRequested;
-        _sideButtonToggleHook.AddWindowRequested += HandleSideButtonAddWindowRequested;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -155,25 +154,17 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable, ISync
         _syncManager.Dispose();
     }
 
-    private void AddWindowFromCursor(bool setAsMain, bool notifyResult = false)
+    private void AddWindowFromCursor(bool setAsMain)
     {
         var picked = WindowPicker.PickWindowUnderCursor(_getOwnerHandle(), out var error);
-        AddPickedWindow(picked, error, setAsMain, notifyResult);
+        AddPickedWindow(picked, error, setAsMain);
     }
 
-    private void AddPickedWindow(WindowInfo? picked, string error, bool setAsMain, bool notifyResult = false)
+    private void AddPickedWindow(WindowInfo? picked, string error, bool setAsMain)
     {
         if (picked == null)
         {
-            if (notifyResult)
-            {
-                _notifications.ShowToast(ToastKind.Error, "添加窗口失败", error);
-            }
-            else
-            {
-                ShowWarning(error);
-            }
-
+            ShowWarning(error);
             return;
         }
 
@@ -183,14 +174,6 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable, ISync
             if (setAsMain)
             {
                 SetMainWindow(existing);
-                if (notifyResult)
-                {
-                    _notifications.ShowToast(ToastKind.Info, "主窗口已设置", $"{existing.DisplayTitle} 已设为主操作窗口。");
-                }
-            }
-            else if (notifyResult)
-            {
-                _notifications.ShowToast(ToastKind.Warning, "窗口已存在", "当前窗口已存在于同步列表。");
             }
             else
             {
@@ -208,13 +191,6 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable, ISync
         }
 
         RefreshSummary();
-        if (notifyResult && setAsMain)
-        {
-            _notifications.ShowToast(
-                ToastKind.Info,
-                "主窗口已设置",
-                $"{picked.DisplayTitle} 已设为主操作窗口。");
-        }
     }
 
     private void SetSelectedOrCursorWindowAsMain()
@@ -399,6 +375,20 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable, ISync
             return;
         }
 
+        // 已关闭或句柄被复用的窗口不再拒绝开启，直接从列表中移除
+        var removedCount = RemoveDeadWindows(out var mainRemoved);
+        var removedHint = removedCount > 0 ? $"已自动移除 {removedCount} 个失效窗口。" : string.Empty;
+        if (removedCount > 0)
+        {
+            RefreshSummary();
+        }
+
+        if (mainRemoved)
+        {
+            ReportStartFailure($"主操作窗口已关闭，请重新设置主操作窗口。{removedHint}", notifyResult);
+            return;
+        }
+
         if (!_syncManager.Start(
                 Windows.ToArray(),
                 _mainWindow,
@@ -407,24 +397,53 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable, ISync
                 out var error,
                 enableDiagnostics: EnableDiagnostics))
         {
-            if (notifyResult)
-            {
-                _notifications.ShowToast(ToastKind.Error, "开启同步失败", error);
-            }
-            else
-            {
-                ShowWarning(error);
-            }
-
+            ReportStartFailure($"{error}{removedHint}", notifyResult);
             RefreshSummary();
             return;
         }
 
         RefreshSummary();
+        if (notifyResult || removedCount > 0)
+        {
+            _notifications.ShowToast(
+                ToastKind.Success,
+                "同步已开启",
+                $"正在向 {TargetCount} 个目标窗口同步输入。{removedHint}");
+        }
+    }
+
+    private void ReportStartFailure(string message, bool notifyResult)
+    {
         if (notifyResult)
         {
-            _notifications.ShowToast(ToastKind.Success, "同步已开启", $"正在向 {TargetCount} 个目标窗口同步输入。");
+            _notifications.ShowToast(ToastKind.Error, "开启同步失败", message);
         }
+        else
+        {
+            ShowWarning(message);
+        }
+    }
+
+    /// <summary>
+    /// 把已关闭（或句柄已被其他程序复用）的窗口从列表中移除，返回移除数量。
+    /// 仅在同步未运行时调用，运行中不修改列表。
+    /// </summary>
+    private int RemoveDeadWindows(out bool mainRemoved)
+    {
+        mainRemoved = false;
+
+        var dead = Windows.Where(window => !window.IsAlive()).ToArray();
+        foreach (var window in dead)
+        {
+            if (ReferenceEquals(window, _mainWindow))
+            {
+                mainRemoved = true;
+            }
+
+            RemoveWindow(window);
+        }
+
+        return dead.Length;
     }
 
     private void ShowDiagnosticReportIfAny()
@@ -461,6 +480,23 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable, ISync
             return;
         }
 
+        // 同步未运行时，先清掉已关闭的窗口，避免报"目标窗口句柄无效"
+        if (!_syncManager.IsRunning && RemoveDeadWindows(out var mainRemoved) > 0)
+        {
+            RefreshSummary();
+            if (!Windows.Contains(selected))
+            {
+                ShowWarning("该窗口已关闭，已自动从列表移除。");
+                return;
+            }
+
+            if (mainRemoved)
+            {
+                ShowWarning("主操作窗口已关闭，已自动从列表移除，请重新设置主操作窗口。");
+                return;
+            }
+        }
+
         if (!_syncManager.TestMessageFallback(
                 _mainWindow,
                 selected,
@@ -479,11 +515,6 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable, ISync
     private void HandleSideButtonToggleRequested(object? sender, EventArgs e)
     {
         DispatchToUi(() => ToggleSync(notifyResult: true));
-    }
-
-    private void HandleSideButtonAddWindowRequested(object? sender, EventArgs e)
-    {
-        DispatchToUi(() => AddWindowFromCursor(setAsMain: false, notifyResult: true));
     }
 
     private void DispatchToUi(Action action)

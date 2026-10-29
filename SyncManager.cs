@@ -30,7 +30,8 @@ public sealed class SyncManager : IDisposable
             return false;
         }
 
-        var targets = windows.Where(window => window.Handle != mainWindow!.Handle).ToArray();
+        // 个别目标窗口在开启前恰好失效时直接跳过，不拒绝开启
+        var targets = windows.Where(window => window.Handle != mainWindow!.Handle && window.IsAlive()).ToArray();
         try
         {
             mainWindow!.BindState = "输入源";
@@ -144,22 +145,16 @@ public sealed class SyncManager : IDisposable
             return false;
         }
 
-        if (!NativeMethods.IsWindow(mainWindow.Handle))
+        if (!mainWindow.IsAlive())
         {
             error = "主操作窗口句柄无效。";
             return false;
         }
 
-        var targets = windows.Where(window => window.Handle != mainWindow.Handle).ToArray();
+        var targets = windows.Where(window => window.Handle != mainWindow.Handle && window.IsAlive()).ToArray();
         if (targets.Length == 0)
         {
             error = "请至少添加一个同步目标窗口。";
-            return false;
-        }
-
-        if (targets.Any(window => window.Handle == IntPtr.Zero || !NativeMethods.IsWindow(window.Handle)))
-        {
-            error = "同步目标窗口中存在无效句柄，请删除后重新添加。";
             return false;
         }
 

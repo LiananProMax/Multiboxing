@@ -39,6 +39,10 @@ namespace EveOPreview.View
 		private bool _isLocationChanged;
 		private bool _isSizeChanged;
 
+		// 只有用户正在拖拽改大小时才为 true。创建、显示、改边框等也会触发 Resize，
+		// 不能靠时间窗把它们当成拖拽，否则会把全局倍数算错并在下次启动时让缩略图变小。
+		private bool _isUserResizing;
+
 		private bool _isCustomMouseModeActive;
 
 		private double _opacity;
@@ -600,7 +604,32 @@ namespace EveOPreview.View
 
 			this._isSizeChanged = true;
 
+			// 时间窗只兜底启动瞬间的抖动；是否改写配置以“用户正在拖”为准
+			if (!this._isUserResizing)
+			{
+				return;
+			}
+
 			this.ThumbnailResized?.Invoke(this.Id);
+		}
+
+		protected override void OnResizeBegin(EventArgs e)
+		{
+			// 开启边框时，用窗口边框拖拽不会走自定义鼠标模式
+			this._isUserResizing = true;
+			base.OnResizeBegin(e);
+		}
+
+		protected override void OnResizeEnd(EventArgs e)
+		{
+			try
+			{
+				base.OnResizeEnd(e);
+			}
+			finally
+			{
+				this._isUserResizing = false;
+			}
 		}
 
 		private void MouseEnter_Handler(object sender, EventArgs e)
@@ -700,8 +729,17 @@ namespace EveOPreview.View
                 // Right button only trigger thumbnail movement
                 if (leftButton && rightButton)
                 {
-                    this.Size = new Size(this.Size.Width + offsetX, this.Size.Height + offsetY);
-                    this._baseZoomSize = this.Size;
+                    // Size 赋值会同步触发 Resize，标记必须包住这次赋值
+                    this._isUserResizing = true;
+                    try
+                    {
+                        this.Size = new Size(this.Size.Width + offsetX, this.Size.Height + offsetY);
+                        this._baseZoomSize = this.Size;
+                    }
+                    finally
+                    {
+                        this._isUserResizing = false;
+                    }
                 }
                 else
                 {

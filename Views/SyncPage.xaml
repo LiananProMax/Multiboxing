@@ -180,7 +180,7 @@
                     <TextBlock Margin="0,2,0,0" Style="{StaticResource MutedTextStyle}" Text="② 选中实际输入窗口 → “设为主窗口”" />
                     <TextBlock Margin="0,2,0,0" Style="{StaticResource MutedTextStyle}" Text="③ 用“测试同步”确认目标可接收消息" />
                     <TextBlock Margin="0,2,0,0" Style="{StaticResource MutedTextStyle}" Text="④ 开启同步后即可在主窗口正常输入" />
-                    <TextBlock Margin="0,5,0,0" FontSize="10" TextWrapping="Wrap" Foreground="{StaticResource WarningBrush}" Text="快捷键:XButton1 开关同步 · XButton2 加光标窗口" />
+                    <TextBlock Margin="0,5,0,0" FontSize="10" TextWrapping="Wrap" Foreground="{StaticResource WarningBrush}" Text="快捷键:鼠标后退侧键（XButton1）开启或关闭同步" />
                     <TextBlock Margin="0,3,0,0" Style="{StaticResource MutedTextStyle}" Text="也可 Ctrl+点击窗口预览缩略图加入/移出列表（亮绿框=已加入）" />
                     <TextBlock Margin="0,3,0,0" Style="{StaticResource MutedTextStyle}" Text="Ctrl+右键点击缩略图设为主窗口（不在列表则自动加入，琥珀金框=主窗口）" />
                     <TextBlock Margin="0,3,0,0" Style="{StaticResource MutedTextStyle}" Text="程序按管理员权限运行,使用 Windows 消息与低级钩子实现键鼠同步。" />

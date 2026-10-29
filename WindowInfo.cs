@@ -107,6 +107,21 @@ public sealed class WindowInfo : INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// 窗口是否仍然有效：句柄存在，并且仍属于添加时的那个进程。
+    /// 窗口关闭后句柄可能被系统复用给其他程序的窗口，此时也视为失效。
+    /// </summary>
+    public bool IsAlive()
+    {
+        if (Handle == IntPtr.Zero || !NativeMethods.IsWindow(Handle))
+        {
+            return false;
+        }
+
+        NativeMethods.GetWindowThreadProcessId(Handle, out var processId);
+        return ProcessId == 0 || unchecked((int)processId) == ProcessId;
+    }
+
     public void ResetRuntimeState()
     {
         BindState = "未就绪";

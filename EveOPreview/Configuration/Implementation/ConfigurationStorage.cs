@@ -55,12 +55,27 @@ namespace EveOPreview.Configuration.Implementation
 		{
 			string rawData = JsonConvert.SerializeObject(this._thumbnailConfiguration, Formatting.Indented);
 			string filename = this.GetConfigFileName();
+			string tempFilename = filename + ".tmp";
 
 			try
 			{
-				File.WriteAllText(filename, rawData);
+				// 先写临时文件再替换，避免进程在写入中途被结束时留下截断的 JSON
+				File.WriteAllText(tempFilename, rawData);
+
+				if (File.Exists(filename))
+				{
+					File.Replace(tempFilename, filename, null);
+				}
+				else
+				{
+					File.Move(tempFilename, filename);
+				}
 			}
 			catch (IOException)
+			{
+				// Ignore error if for some reason the updated config cannot be written down
+			}
+			catch (UnauthorizedAccessException)
 			{
 				// Ignore error if for some reason the updated config cannot be written down
 			}

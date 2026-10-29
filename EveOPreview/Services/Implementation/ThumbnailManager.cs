@@ -27,6 +27,11 @@ namespace EveOPreview.Services
 		private const int WINDOW_SIZE_THRESHOLD = 10;
 		private const int FORCED_REFRESH_CYCLE_THRESHOLD = 2;
 		private const int DEFAULT_LOCATION_CHANGE_NOTIFICATION_DELAY = 2;
+		private const int DEFAULT_SIZE_CHANGE_SAVE_DELAY = 2;
+
+		// 倍数模式暂时读不到源窗口时的折算基准，与旧配置迁移用的 1080p 一致
+		private const int FALLBACK_SOURCE_WIDTH = 1920;
+		private const int FALLBACK_SOURCE_HEIGHT = 1080;
 
 		private const string DEFAULT_CLIENT_TITLE = "EVE";
 		#endregion
@@ -47,6 +52,9 @@ namespace EveOPreview.Services
 
 		private readonly object _locationChangeNotificationSyncRoot;
 		private (IntPtr Handle, string Title, string ActiveClient, Point Location, int Delay) _enqueuedLocationChangeNotification;
+
+		// -1 表示没有待保存的尺寸变化。拖拽停手后再等几个刷新周期，避免每次鼠标移动都写盘
+		private int _sizeChangeSaveDelay = -1;
 
 		private bool _ignoreViewEvents;
 		private bool _isHoverEffectActive;
@@ -315,6 +323,7 @@ namespace EveOPreview.Services
 			this._activeClient = (IntPtr.Zero, ThumbnailManager.DEFAULT_CLIENT_TITLE);
 			this._isHoverEffectActive = false;
 			this._refreshCycleCount = 0;
+			this._sizeChangeSaveDelay = -1;
 			lock (this._locationChangeNotificationSyncRoot)
 			{
 				this._enqueuedLocationChangeNotification = (IntPtr.Zero, null, null, Point.Empty, -1);
@@ -545,94 +554,105 @@ namespace EveOPreview.Services
 			}
 
 			this.DisableViewEvents();
-
-			// Snap thumbnail
-			// No need to update Thumbnails while one of them is highlighted
-			if ((!this._isHoverEffectActive) && this.TryDequeueLocationChange(out var locationChange))
+			try
 			{
-				if ((locationChange.ActiveClient == this._activeClient.Title) && this._thumbnailViews.TryGetValue(locationChange.Handle, out var view))
-				{
-					this.SnapThumbnailView(view);
-
-					this.RaiseThumbnailLocationUpdatedNotification(view.Title);
-				}
-				else
-				{
-					this.RaiseThumbnailLocationUpdatedNotification(locationChange.Title);
-				}
-			}
-
-			// Hide, show, resize and move - update ZoomAnchor setting
-			foreach (KeyValuePair<IntPtr, IThumbnailView> entry in this._thumbnailViews)
-			{
-				IThumbnailView view = entry.Value;
-				// update ZoomAnchor regardless
-				view.ClientZoomAnchor = this._configuration.GetZoomAnchor(view.Title, this._configuration.ThumbnailZoomAnchor);
-
-
-				if (hideAllThumbnails || this._configuration.IsThumbnailDisabled(view.Title))
-				{
-					if (view.IsActive)
-					{
-						view.Hide();
-					}
-					continue;
-				}
-
-				if (this._configuration.HideActiveClientThumbnail && (view.Id == this._activeClient.Handle))
-				{
-					if (view.IsActive)
-					{
-						view.Hide();
-					}
-					continue;
-				}
-
-				if (this._configuration.HideLoginClientThumbnail && (view.Title == DEFAULT_CLIENT_TITLE ))
-				{
-					if (view.IsActive)
-					{
-						view.Hide();
-					}
-					continue;
-				}
-
+				// Snap thumbnail
 				// No need to update Thumbnails while one of them is highlighted
-				if (!this._isHoverEffectActive)
+				if ((!this._isHoverEffectActive) && this.TryDequeueLocationChange(out var locationChange))
 				{
-					// Do not even move thumbnails with default caption
-					if (this.IsManageableThumbnail(view))
+					if ((locationChange.ActiveClient == this._activeClient.Title) && this._thumbnailViews.TryGetValue(locationChange.Handle, out var view))
 					{
-						view.ThumbnailLocation = this._configuration.GetThumbnailLocation(view.Title, this._activeClient.Title, view.ThumbnailLocation);
+						this.SnapThumbnailView(view);
+
+						this.RaiseThumbnailLocationUpdatedNotification(view.Title);
+					}
+					else
+					{
+						this.RaiseThumbnailLocationUpdatedNotification(locationChange.Title);
+					}
+				}
+
+				// Hide, show, resize and move - update ZoomAnchor setting
+				foreach (KeyValuePair<IntPtr, IThumbnailView> entry in this._thumbnailViews)
+				{
+					IThumbnailView view = entry.Value;
+					// update ZoomAnchor regardless
+					view.ClientZoomAnchor = this._configuration.GetZoomAnchor(view.Title, this._configuration.ThumbnailZoomAnchor);
+
+
+					if (hideAllThumbnails || this._configuration.IsThumbnailDisabled(view.Title))
+					{
+						if (view.IsActive)
+						{
+							view.Hide();
+						}
+						continue;
+					}
+
+					if (this._configuration.HideActiveClientThumbnail && (view.Id == this._activeClient.Handle))
+					{
+						if (view.IsActive)
+						{
+							view.Hide();
+						}
+						continue;
+					}
+
+					if (this._configuration.HideLoginClientThumbnail && (view.Title == DEFAULT_CLIENT_TITLE ))
+					{
+						if (view.IsActive)
+						{
+							view.Hide();
+						}
+						continue;
+					}
+
+					// No need to update Thumbnails while one of them is highlighted
+					if (!this._isHoverEffectActive)
+					{
+						// 位置只管理已登录的客户端。尺寸对登录窗口也要适配，
+						// 否则它们一直停在初始框大小，一次误触发的拖拽就会把全局倍数算到下限
+						if (this.IsManageableThumbnail(view))
+						{
+							view.ThumbnailLocation = this._configuration.GetThumbnailLocation(view.Title, this._activeClient.Title, view.ThumbnailLocation);
+						}
+
 						// box 必须取配置尺寸（开启比例时是最大范围），不能用已适配过的当前尺寸，否则会逐步缩小
 						Size box = this._configuration.GetThumbnailSize(view.Title, this._activeClient.Title, this._configuration.ThumbnailSize);
 						view.ThumbnailSize = this.FitToSourceRatio(view, box);
+
+						view.SetOpacity(this._configuration.ThumbnailOpacity);
+						view.SetTopMost(this._configuration.ShowThumbnailsAlwaysOnTop);
 					}
 
-					view.SetOpacity(this._configuration.ThumbnailOpacity);
-					view.SetTopMost(this._configuration.ShowThumbnailsAlwaysOnTop);
+					view.IsOverlayEnabled = this._configuration.ShowThumbnailOverlays;
+
+					view.SetHighlight(
+						this._configuration.EnableActiveClientHighlight && (view.Id == this._activeClient.Handle), 
+						this._configuration.ActiveClientHighlightThickness);
+					// 同步边框以同步列表为唯一数据源：列表页手动增删也会在下一轮刷新到边框
+					bool isSyncTarget = this._syncTargetRegistry != null && this._syncTargetRegistry.IsSyncTarget(view.Id);
+					view.SetSyncHighlight(isSyncTarget, isSyncTarget && this._syncTargetRegistry.IsMainSyncTarget(view.Id));
+
+					if (!view.IsActive)
+					{
+						view.Show();
+					}
+					else
+					{
+						view.Refresh(forceRefresh);
+					}
 				}
 
-				view.IsOverlayEnabled = this._configuration.ShowThumbnailOverlays;
-
-				view.SetHighlight(
-					this._configuration.EnableActiveClientHighlight && (view.Id == this._activeClient.Handle), 
-					this._configuration.ActiveClientHighlightThickness);
-				// 同步边框以同步列表为唯一数据源：列表页手动增删也会在下一轮刷新到边框
-				bool isSyncTarget = this._syncTargetRegistry != null && this._syncTargetRegistry.IsSyncTarget(view.Id);
-				view.SetSyncHighlight(isSyncTarget, isSyncTarget && this._syncTargetRegistry.IsMainSyncTarget(view.Id));
-
-				if (!view.IsActive)
+				if (this.TryDequeueSizeChangeSave())
 				{
-					view.Show();
-				}
-				else
-				{
-					view.Refresh(forceRefresh);
+					this.RaiseThumbnailConfigurationSave();
 				}
 			}
-
-			this.EnableViewEvents();
+			finally
+			{
+				this.EnableViewEvents();
+			}
 		}
 
 		public void UpdateThumbnailsSize()
@@ -647,28 +667,36 @@ namespace EveOPreview.Services
 		private void SetCycleGroupIndicator(ZoomAnchor anchor)
 		{
 			this.DisableViewEvents();
-
-			foreach (KeyValuePair<IntPtr, IThumbnailView> entry in this._thumbnailViews)
+			try
 			{
-				entry.Value.SetCycleGroupIndicator(entry.Value.IsExcludedFromCycleGroup, anchor);
-				entry.Value.Refresh(false);
+				foreach (KeyValuePair<IntPtr, IThumbnailView> entry in this._thumbnailViews)
+				{
+					entry.Value.SetCycleGroupIndicator(entry.Value.IsExcludedFromCycleGroup, anchor);
+					entry.Value.Refresh(false);
+				}
 			}
-
-			this.EnableViewEvents();
+			finally
+			{
+				this.EnableViewEvents();
+			}
 		}
 
 		private void SetThumbnailsSize(Size size)
 		{
 			this.DisableViewEvents();
-
-			foreach (KeyValuePair<IntPtr, IThumbnailView> entry in this._thumbnailViews)
+			try
 			{
-				this.ApplySizeLimitations(entry.Value);
-				entry.Value.ThumbnailSize = this.FitToSourceRatio(entry.Value, size);
-				entry.Value.Refresh(false);
+				foreach (KeyValuePair<IntPtr, IThumbnailView> entry in this._thumbnailViews)
+				{
+					this.ApplySizeLimitations(entry.Value);
+					entry.Value.ThumbnailSize = this.FitToSourceRatio(entry.Value, size);
+					entry.Value.Refresh(false);
+				}
 			}
-
-			this.EnableViewEvents();
+			finally
+			{
+				this.EnableViewEvents();
+			}
 		}
 
 		private void ApplySizeLimitations(IThumbnailView view)
@@ -703,13 +731,18 @@ namespace EveOPreview.Services
 
 		private Size FitToSourceRatio(IThumbnailView view, Size box)
 		{
-			// 倍数模式：以各自源窗口的实际尺寸为基准等比缩放，比例不同的窗口天然不变形
-			if (this._configuration.UseThumbnailScale && this.TryGetSourceSize(view, out Size scaledSource))
+			// 倍数模式：以各自源窗口的实际尺寸为基准等比缩放，比例不同的窗口天然不变形。
+			// 读不到源尺寸（刚启动且窗口最小化、缓存也空）时按 1080p 折算，
+			// 不能退回固定框尺寸，否则和倍数脱节，重启后会突然变大或变小
+			if (this._configuration.UseThumbnailScale)
 			{
 				double scale = EveOPreview.Configuration.Implementation.ThumbnailConfiguration.ApplyRestrictions(this._configuration.ThumbnailScale);
+				Size source = this.TryGetSourceSize(view, out Size scaledSource)
+					? scaledSource
+					: new Size(ThumbnailManager.FALLBACK_SOURCE_WIDTH, ThumbnailManager.FALLBACK_SOURCE_HEIGHT);
 				return new Size(
-					Math.Max(1, (int)Math.Round(scaledSource.Width * scale, MidpointRounding.AwayFromZero)),
-					Math.Max(1, (int)Math.Round(scaledSource.Height * scale, MidpointRounding.AwayFromZero)));
+					Math.Max(1, (int)Math.Round(source.Width * scale, MidpointRounding.AwayFromZero)),
+					Math.Max(1, (int)Math.Round(source.Height * scale, MidpointRounding.AwayFromZero)));
 			}
 
 			if (!this._configuration.KeepThumbnailAspectRatio || box.Width <= 0 || box.Height <= 0)
@@ -746,15 +779,19 @@ namespace EveOPreview.Services
 		public void UpdateThumbnailFrames()
 		{
 			this.DisableViewEvents();
-
-			foreach (KeyValuePair<IntPtr, IThumbnailView> entry in this._thumbnailViews)
+			try
 			{
-				entry.Value.SetFrames(this._configuration.ShowThumbnailFrames);
-				ApplyCaptionBar(entry.Value);
-				entry.Value.SetPreventPreviews();
+				foreach (KeyValuePair<IntPtr, IThumbnailView> entry in this._thumbnailViews)
+				{
+					entry.Value.SetFrames(this._configuration.ShowThumbnailFrames);
+					ApplyCaptionBar(entry.Value);
+					entry.Value.SetPreventPreviews();
+				}
 			}
-
-			this.EnableViewEvents();
+			finally
+			{
+				this.EnableViewEvents();
+			}
 		}
 
 		private void EnableViewEvents()
@@ -940,8 +977,16 @@ namespace EveOPreview.Services
 
 			IThumbnailView view = this._thumbnailViews[id];
 
-			if (this._configuration.UseThumbnailScale && this.TryGetSourceSize(view, out Size sourceSize))
+			if (this._configuration.UseThumbnailScale)
 			{
+				if (!this.TryGetSourceSize(view, out Size sourceSize))
+				{
+					// 取不到源尺寸时无法反推倍数，也不能落到固定尺寸分支去改 ThumbnailSize
+					this.SetThumbnailsSize(this._configuration.ThumbnailSize);
+					view.Refresh(false);
+					return;
+				}
+
 				// 倍数模式：从拖拽后的尺寸反推倍数。取相对变化更大的那一轴，
 				// 避免另一轴的取整误差把倍数带偏；倍数不做四舍五入存储，
 				// 否则每次几像素的拖拽增量会被吞掉
@@ -959,6 +1004,7 @@ namespace EveOPreview.Services
 
 				view.Refresh(false);
 
+				this.EnqueueSizeChangeSave();
 				await this._mediator.Publish(new ThumbnailActiveSizeUpdated(this._configuration.ThumbnailSize, scale));
 				return;
 			}
@@ -972,6 +1018,7 @@ namespace EveOPreview.Services
 
 			view.Refresh(false);
 
+			this.EnqueueSizeChangeSave();
 			await this._mediator.Publish(new ThumbnailActiveSizeUpdated(size, this._configuration.ThumbnailScale));
 		}
 
@@ -1017,21 +1064,29 @@ namespace EveOPreview.Services
 		private void ThumbnailZoomIn(IThumbnailView view)
 		{
 			this.DisableViewEvents();
-
-			view.ZoomIn(ViewZoomAnchorConverter.Convert(view.ClientZoomAnchor), this._configuration.ThumbnailZoomFactor);
-			view.Refresh(false);
-
-			this.EnableViewEvents();
+			try
+			{
+				view.ZoomIn(ViewZoomAnchorConverter.Convert(view.ClientZoomAnchor), this._configuration.ThumbnailZoomFactor);
+				view.Refresh(false);
+			}
+			finally
+			{
+				this.EnableViewEvents();
+			}
 		}
 
 		private void ThumbnailZoomOut(IThumbnailView view)
 		{
 			this.DisableViewEvents();
-
-			view.ZoomOut();
-			view.Refresh(false);
-
-			this.EnableViewEvents();
+			try
+			{
+				view.ZoomOut();
+				view.Refresh(false);
+			}
+			finally
+			{
+				this.EnableViewEvents();
+			}
 		}
 
 		private void SnapThumbnailView(IThumbnailView view)
@@ -1208,6 +1263,34 @@ namespace EveOPreview.Services
 
 				this._configuration.SetClientLayout(view.Title, new ClientLayout(position.Left, position.Top, width, height, isMaximized));
 			}
+		}
+
+		private void EnqueueSizeChangeSave()
+		{
+			this._sizeChangeSaveDelay = ThumbnailManager.DEFAULT_SIZE_CHANGE_SAVE_DELAY;
+		}
+
+		private bool TryDequeueSizeChangeSave()
+		{
+			if (this._sizeChangeSaveDelay < 0)
+			{
+				return false;
+			}
+
+			this._sizeChangeSaveDelay--;
+
+			if (this._sizeChangeSaveDelay > 0)
+			{
+				return false;
+			}
+
+			this._sizeChangeSaveDelay = -1;
+			return true;
+		}
+
+		private async void RaiseThumbnailConfigurationSave()
+		{
+			await this._mediator.Send(new SaveConfiguration());
 		}
 
 		private void EnqueueLocationChange(IThumbnailView view)
